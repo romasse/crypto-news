@@ -1,0 +1,27 @@
+# Render Blueprint — деплой одним сервисом (FastAPI отдаёт и API, и фронт).
+# В дашборде Render: New → Blueprint → подключить этот репозиторий.
+services:
+  - type: web
+    name: crypto-news
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      # Версия Python (совместима с протестированным стеком).
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Ключ Anthropic — секрет: НЕ хранится в репозитории, вводится в дашборде Render.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CRYPTO_NEWS_MODEL
+        value: claude-sonnet-4-6
+      - key: CRYPTO_NEWS_SOURCES
+        value: rss,investing,cryptopanic,mock
+      # Опционально: токен CryptoPanic (без него источник тихо пропускается).
+      - key: CRYPTOPANIC_TOKEN
+        sync: false
+      # Опционально для постоянной БД: примонтируй Render Disk и укажи путь, напр.
+      #   CRYPTO_NEWS_DB=/var/data/crypto_news.db
+      # Без диска SQLite живёт в эфемерной ФС и обнуляется при редеплое/рестарте.

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto News Analyzer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    :root {
+      --bg: #0b0e14; --panel: #141925; --border: #232a3a;
+      --text: #e6e9f0; --muted: #8b94a7;
+      --bull: #2ecc71; --bear: #e74c3c; --neutral: #7f8ea3; --accent: #f7a600;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif;
+      background: var(--bg); color: var(--text); }
+    header { padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    h1 { font-size: 18px; margin: 0; }
+    .badge-ai { font-size: 12px; color: var(--muted); }
+    .controls { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    select, button, input { background: var(--panel); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); color: #1a1200; border: none; font-weight: 600; }
+    button:disabled { opacity: .5; cursor: default; }
+    main { padding: 20px; display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+    .panel { background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; }
+    .panel h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em; }
+    .news { display: flex; flex-direction: column; gap: 12px; }
+    .card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .card .meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 6px; }
+    .card .title { font-weight: 600; margin-bottom: 6px; }
+    .card .title a { color: var(--text); text-decoration: none; }
+    .card .summary { font-size: 14px; color: #c7cdda; margin-bottom: 10px; }
+    .biases { display: flex; gap: 8px; flex-wrap: wrap; }
+    .bias { font-size: 12px; padding: 3px 8px; border-radius: 6px; font-weight: 600; }
+    .Bullish { background: rgba(46,204,113,.15); color: var(--bull); }
+    .Bearish { background: rgba(231,76,60,.15); color: var(--bear); }
+    .Neutral { background: rgba(127,142,163,.15); color: var(--neutral); }
+    .chip { font-size: 11px; padding: 2px 7px; border-radius: 5px;
+      background: rgba(247,166,0,.12); color: var(--accent); }
+    .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+    .stat { font-size: 13px; color: var(--muted); margin-top: 10px; }
+    .muted { color: var(--muted); }
+    .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
+      overflow-x: auto; }
+    .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 12px; white-space: nowrap; }
+    .ticker .sym { font-weight: 700; }
+    .ticker .up { color: var(--bull); } .ticker .down { color: var(--bear); }
+    .cc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+    .cc .row { display: flex; justify-content: space-between; }
+    .cc .row span:first-child { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🪙 Crypto News Analyzer</h1>
+    <span class="badge-ai" id="aiBadge">…</span>
+    <div class="controls">
+      <select id="coinFilter">
+        <option value="">Все монеты</option>
+        <option>BTC</option><option>ETH</option><option>SOL</option>
+        <option>XRP</option><option>BNB</option><option>DOGE</option>
+      </select>
+      <select id="hours">
+        <option value="1">1 час</option>
+        <option value="2" selected>2 часа</option>
+        <option value="6">6 часов</option>
+        <option value="24">24 часа</option>
+      </select>
+      <button class="primary" id="collectBtn">Собрать сейчас</button>
+    </div>
+  </header>
+
+  <div class="market" id="market"></div>
+
+  <main>
+    <section class="panel">
+      <h2>Лента событий</h2>
+      <div class="news" id="news"><div class="empty">Нажми «Собрать сейчас», чтобы запустить конвейер.</div></div>
+    </section>
+    <aside class="panel">
+      <h2>Сентимент по монетам</h2>
+      <canvas id="sentimentChart" height="220"></canvas>
+      <div class="stat" id="collectStat"></div>
+      <h2 style="margin-top:18px">Correlation Check</h2>
+      <div class="cc" id="correlation"><span class="muted">собери данные →</span></div>
+    </aside>
+  </main>
+
+  <script>
+    const API = location.origin;
+    let chart;
+
+    async function loadHealth() {
+      try {
+        const h = await (await fetch(`${API}/api/health`)).json();
+        document.getElementById('aiBadge').textContent =
+          h.ai_enabled ? `AI: ${h.model}` : 'AI: stub (нет ключа)';
+      } catch { document.getElementById('aiBadge').textContent = 'API offline'; }
+    }
+
+    function biasHtml(db) {
+      return ['BTC','ETH','SOL'].map(c =>
+        `<span class="bias ${db[c]}">${c}: ${db[c]}</span>`).join('');
+    }
+
+    function renderFeed(items) {
+      const el = document.getElementById('news');
+      if (!items.length) { el.innerHTML = '<div class="empty">Нет событий за выбранное окно.</div>'; return; }
+      el.innerHTML = items.map(a => {
+        const it = a.item, an = a.analysis;
+        const time = new Date(it.published_at).toLocaleString('ru-RU');
+        const coins = it.coins.map(c => `<span class="chip">${c}</span>`).join(' ');
+        const title = it.url ? `<a href="${it.url}" target="_blank">${it.title}</a>` : it.title;
+        return `<div class="card">
+          <div class="meta"><span>${it.source}</span><span>${time}</span>
+            <span>сентимент: ${an.sentiment >= 0 ? '+' : ''}${an.sentiment}</span>${coins}</div>
+          <div class="title">${title}</div>
+          <div class="summary">${an.ai_analysis || an.summary}</div>
+          <div class="biases">${biasHtml(an.directional_bias)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderChart(map) {
+      const labels = Object.keys(map), data = Object.values(map);
+      const colors = data.map(v => v > 0.1 ? '#2ecc71' : v < -0.1 ? '#e74c3c' : '#7f8ea3');
+      if (chart) chart.destroy();
+      chart = new Chart(document.getElementById('sentimentChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data, backgroundColor: colors }] },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { min: -1, max: 1, ticks: { color: '#8b94a7' }, grid: { color: '#232a3a' } },
+            x: { ticks: { color: '#8b94a7' }, grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderMarket(prices) {
+      const order = ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA'];
+      const el = document.getElementById('market');
+      const keys = order.filter(k => prices[k]);
+      if (!keys.length) { el.innerHTML = ''; return; }
+      el.innerHTML = keys.map(k => {
+        const p = prices[k], ch = p.change_24h ?? 0;
+        const cls = ch >= 0 ? 'up' : 'down';
+        const price = p.price != null ? '$' + Number(p.price).toLocaleString('en-US') : '—';
+        return `<div class="ticker"><span class="sym">${k}</span><span>${price}</span>
+          <span class="${cls}">${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%</span></div>`;
+      }).join('');
+    }
+
+    function renderCorrelation(cc) {
+      const el = document.getElementById('correlation');
+      if (!cc) { el.innerHTML = '<span class="muted">нет данных</span>'; return; }
+      const rows = [
+        ['Объём BTC', cc.btc_volume], ['Funding rate', cc.funding_rate],
+        ['DXY', cc.dxy], ['Nasdaq / BTC', cc.nasdaq],
+      ];
+      el.innerHTML = rows.map(([k,v]) =>
+        `<div class="row"><span>${k}</span><span>${v ?? '—'}</span></div>`).join('');
+    }
+
+    async function loadMarket() {
+      try { renderMarket((await (await fetch(`${API}/api/market`)).json()).prices || {}); }
+      catch {}
+    }
+
+    async function collect() {
+      const btn = document.getElementById('collectBtn');
+      const hours = document.getElementById('hours').value;
+      btn.disabled = true; btn.textContent = 'Собираю…';
+      try {
+        const r = await (await fetch(`${API}/api/collect?hours=${hours}`, { method: 'POST' })).json();
+        document.getElementById('collectStat').textContent =
+          `Окно ${r.window_hours} ч · собрано ${r.collected} · ново разобрано ${r.analyzed}`;
+        renderChart(r.sentiment_by_coin);
+        if (r.market && r.market.prices) renderMarket(r.market.prices);
+        if (r.items.length) renderCorrelation(r.items[0].analysis.correlation_check);
+        await loadFeed();
+      } finally { btn.disabled = false; btn.textContent = 'Собрать сейчас'; }
+    }
+
+    async function loadFeed() {
+      const coin = document.getElementById('coinFilter').value;
+      const url = `${API}/api/feed${coin ? `?coin=${coin}` : ''}`;
+      renderFeed(await (await fetch(url)).json());
+    }
+
+    document.getElementById('collectBtn').onclick = collect;
+    document.getElementById('coinFilter').onchange = loadFeed;
+    loadHealth(); loadFeed(); loadMarket();
+  </script>
+</body>
+</html>
