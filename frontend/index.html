@@ -103,7 +103,7 @@
       try {
         const h = await (await fetch(`${API}/api/health`)).json();
         document.getElementById('aiBadge').textContent =
-          h.ai_enabled ? `AI: ${h.model}` : 'AI: stub (нет ключа)';
+          h.ai_enabled ? 'Роман Субота' : 'Роман Субота (демо-режим)';
       } catch { document.getElementById('aiBadge').textContent = 'API offline'; }
     }
 
