@@ -115,6 +115,30 @@
     .mtable tbody tr { cursor: pointer; }
     .mtable tbody tr:hover { background: rgba(247,166,0,.06); }
     .mtable .up { color: var(--bull); } .mtable .down { color: var(--bear); }
+    /* модальное окно монеты */
+    .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
+    .modal-card { position: relative; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 60px);
+      overflow: auto; background: rgba(20,25,37,0.97); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; }
+    .modal-close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+    .cm-head { display: flex; align-items: center; gap: 12px; }
+    .cm-head img { width: 40px; height: 40px; border-radius: 50%; }
+    .cm-name { font-size: 18px; font-weight: 700; }
+    .cm-price { font-size: 30px; font-weight: 700; margin: 10px 0 12px; }
+    .cm-chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; }
+    .cm-chip { border: 1px solid var(--border); border-radius: 10px; padding: 8px 6px; text-align: center; }
+    .cm-chip span { display: block; font-size: 11px; }
+    .cm-chip b { font-size: 14px; }
+    .cm-chip .up, .cm-chip b.up { color: var(--bull); } .cm-chip b.down { color: var(--bear); }
+    .cm-chart-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+    .cm-chart-tabs button { background: transparent; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 8px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+    .cm-chart-tabs button.active { background: var(--panel); color: var(--text); }
+    .cm-stats { margin: 14px 0; display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
+    .cm-stats .row { display: flex; justify-content: space-between; }
+    .cm-stats .row span:first-child { color: var(--muted); }
+    .cm-actions { display: flex; gap: 10px; align-items: center; }
+    .cm-link { color: var(--accent); text-decoration: none; font-size: 14px; }
     .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
       overflow-x: auto; background: rgba(11,14,20,0.45); backdrop-filter: blur(4px); }
     .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
@@ -206,6 +230,33 @@
     <div id="bubbleTip" class="bubble-tip" style="display:none"></div>
     <div id="marketTable" style="display:none"></div>
   </section>
+
+  <div id="coinModal" class="modal" style="display:none">
+    <div class="modal-card">
+      <button class="modal-close" id="coinModalClose">✕</button>
+      <div class="cm-head">
+        <img id="cmLogo" alt=""/>
+        <div>
+          <div class="cm-name"><span id="cmName"></span> <span class="muted" id="cmSym"></span></div>
+          <div class="muted" id="cmRank"></div>
+        </div>
+      </div>
+      <div class="cm-price" id="cmPrice"></div>
+      <div class="cm-chips" id="cmChips"></div>
+      <div class="cm-chart-tabs" id="cmChartTabs">
+        <button data-d="1" class="active">1Д</button>
+        <button data-d="7">7Д</button>
+        <button data-d="30">30Д</button>
+        <button data-d="365">1Г</button>
+      </div>
+      <canvas id="cmChart" height="170"></canvas>
+      <div class="cm-stats" id="cmStats"></div>
+      <div class="cm-actions">
+        <button class="primary" id="cmNews">Новости по монете</button>
+        <a id="cmLink" class="cm-link" target="_blank" rel="noopener">CoinGecko ↗</a>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API = location.origin;
@@ -471,6 +522,7 @@
     let bubblesData = [], bubbleSim = null, bubblesLoaded = false;
     let bubbleView = 'bubbles';
     let tableSort = { key: 'market_cap', dir: -1 };
+    let cmChart = null, cmCoin = null, _globalCache = null;
 
     function switchTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
@@ -537,7 +589,8 @@
         renderTable();
       });
       el.querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => {
-        switchTab('feed'); document.getElementById('coinSearch').value = tr.dataset.sym; doSearch();
+        const c = bubblesData.find(x => x.symbol === tr.dataset.sym);
+        if (c) openCoinModal(c);
       });
     }
 
@@ -561,7 +614,7 @@
       const nodes = bubblesData.map(c => ({ ...c, r: rScale(val(c)), x: W/2 + (Math.random()-0.5)*W, y: H/2 + (Math.random()-0.5)*H }));
 
       const node = svg.selectAll('g').data(nodes).join('g').style('cursor','pointer')
-        .on('click', (e, d) => { switchTab('feed'); document.getElementById('coinSearch').value = d.symbol; doSearch(); });
+        .on('click', (e, d) => openCoinModal(d));
       node.append('circle').attr('r', d => d.r)
         .attr('fill', d => color(d)).attr('fill-opacity', 0.22)
         .attr('stroke', d => color(d)).attr('stroke-width', 1.5);
@@ -618,6 +671,87 @@
           return `translate(${d.x},${d.y})`;
         }));
     }
+
+    // --- Модальное окно монеты ---
+    async function getGlobal() {
+      if (_globalCache) return _globalCache;
+      try { _globalCache = await (await fetch(`${API}/api/global`)).json(); } catch {}
+      return _globalCache;
+    }
+
+    async function openCoinModal(coin) {
+      cmCoin = coin;
+      document.getElementById('cmLogo').src = coin.image || '';
+      document.getElementById('cmLogo').style.display = coin.image ? '' : 'none';
+      document.getElementById('cmName').textContent = coin.name || coin.symbol;
+      document.getElementById('cmSym').textContent = '$' + coin.symbol;
+      document.getElementById('cmRank').textContent = coin.rank ? 'Рейтинг #' + coin.rank : '';
+      document.getElementById('cmPrice').textContent = coin.price != null
+        ? '$' + Number(coin.price).toLocaleString('en-US', { maximumFractionDigits: 8 }) : '—';
+      const chip = (l, v) => `<div class="cm-chip"><span class="muted">${l}</span>`
+        + `<b class="${v == null ? '' : v >= 0 ? 'up' : 'down'}">${v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%'}</b></div>`;
+      document.getElementById('cmChips').innerHTML =
+        chip('1ч', coin.change_1h) + chip('24ч', coin.change_24h) + chip('7д', coin.change_7d)
+        + chip('30д', coin.change_30d) + chip('1г', coin.change_1y);
+      let dom = '—';
+      const g = await getGlobal();
+      if (g && g.TOTAL && coin.market_cap) dom = (coin.market_cap / g.TOTAL * 100).toFixed(2) + '%';
+      const row = (l, v) => `<div class="row"><span>${l}</span><span>${v}</span></div>`;
+      document.getElementById('cmStats').innerHTML =
+        row('Объём рынка (капитализация)', fmtUsd(coin.market_cap))
+        + row('Объём за 24ч', fmtUsd(coin.volume))
+        + row('Доминирование', dom)
+        + row('Цена', coin.price != null ? '$' + Number(coin.price).toLocaleString('en-US', { maximumFractionDigits: 8 }) : '—');
+      document.getElementById('cmLink').href = `https://www.coingecko.com/en/search?query=${encodeURIComponent(coin.symbol)}`;
+      document.querySelectorAll('#cmChartTabs button').forEach(b => b.classList.toggle('active', b.dataset.d === '1'));
+      document.getElementById('coinModal').style.display = 'flex';
+      renderCoinChart(coin.symbol, 1);
+    }
+
+    async function renderCoinChart(symbol, days) {
+      let prices = [];
+      try { prices = (await (await fetch(`${API}/api/coin/chart?symbol=${symbol}&days=${days}`)).json()).prices || []; } catch {}
+      const labels = prices.map(p => p[0]), data = prices.map(p => p[1]);
+      const up = data.length > 1 ? data[data.length - 1] >= data[0] : true;
+      const col = up ? '#2ecc71' : '#e74c3c';
+      if (cmChart) { cmChart.destroy(); cmChart = null; }
+      const cv = document.getElementById('cmChart');
+      if (!data.length) {
+        const ctx = cv.getContext('2d');
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = '#8b94a7'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('График временно недоступен (CoinGecko rate-limit)', cv.width / 2, cv.height / 2);
+        return;
+      }
+      cmChart = new Chart(cv, {
+        type: 'line',
+        data: { labels, datasets: [{ data, borderColor: col, borderWidth: 1.5, fill: true, backgroundColor: col + '22', pointRadius: 0, tension: 0.25 }] },
+        options: {
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: {
+            title: i => new Date(i[0].label).toLocaleString('ru-RU'),
+            label: c => '$' + Number(c.parsed.y).toLocaleString('en-US', { maximumFractionDigits: 8 }) } } },
+          scales: { x: { display: false }, y: { position: 'right', ticks: { color: '#8b94a7', maxTicksLimit: 5 }, grid: { color: '#232a3a' } } }
+        }
+      });
+    }
+
+    function closeCoinModal() {
+      document.getElementById('coinModal').style.display = 'none';
+      if (cmChart) { cmChart.destroy(); cmChart = null; }
+    }
+
+    document.getElementById('coinModalClose').onclick = closeCoinModal;
+    document.getElementById('coinModal').onclick = (e) => { if (e.target.id === 'coinModal') closeCoinModal(); };
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCoinModal(); });
+    document.querySelectorAll('#cmChartTabs button').forEach(b => b.onclick = () => {
+      document.querySelectorAll('#cmChartTabs button').forEach(x => x.classList.toggle('active', x === b));
+      if (cmCoin) renderCoinChart(cmCoin.symbol, +b.dataset.d);
+    });
+    document.getElementById('cmNews').onclick = () => {
+      const sym = cmCoin && cmCoin.symbol; closeCoinModal();
+      if (sym) { switchTab('feed'); document.getElementById('coinSearch').value = sym; doSearch(); }
+    };
 
     document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
     document.getElementById('bubbleMetric').onchange = drawBubbles;

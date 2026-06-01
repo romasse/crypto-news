@@ -48,6 +48,7 @@ class MarketAnalytics:
         # чтобы графа не обнулялась в «нет данных» из-за временного 429
         self._last_fg: Optional[dict] = None
         self._last_alt: Optional[dict] = None
+        self._chart_cache: dict = {}  # {id:days -> (ts, points)}
 
     async def _get_json(self, url: str, params: dict | None = None):
         async with httpx.AsyncClient(timeout=20) as client:
@@ -67,7 +68,7 @@ class MarketAnalytics:
                 "order": "market_cap_desc",
                 "per_page": 100,
                 "page": 1,
-                "price_change_percentage": "1h,24h,7d,30d,90d",
+                "price_change_percentage": "1h,24h,7d,30d,90d,1y",
             },
         )
         return self._markets100.set(data)
@@ -238,8 +239,33 @@ class MarketAnalytics:
                 or c.get("price_change_percentage_24h"),
                 "change_7d": c.get("price_change_percentage_7d_in_currency"),
                 "change_30d": c.get("price_change_percentage_30d_in_currency"),
+                "change_1y": c.get("price_change_percentage_1y_in_currency"),
             })
         return out
+
+    async def coin_chart(self, symbol: str, days: int = 1) -> list:
+        """Ряд цены монеты за N дней (для графика в карточке). [[ts_ms, price], ...]."""
+        coins = await self.universe(400)
+        c = next((x for x in coins if x["symbol"] == symbol.upper()), None)
+        if not c:
+            return []
+        cache_key = f"{c['id']}:{days}"
+        cached = self._chart_cache.get(cache_key)
+        if cached and (time.monotonic() - cached[0]) < 120:
+            return cached[1]
+        try:
+            data = await coingecko.get(
+                f"/coins/{c['id']}/market_chart",
+                {"vs_currency": "usd", "days": days},
+            )
+            prices = data.get("prices", [])
+        except Exception:
+            return []
+        # прореживаем до ~90 точек, чтобы ответ был лёгким
+        step = max(1, len(prices) // 90)
+        thinned = prices[::step]
+        self._chart_cache[cache_key] = (time.monotonic(), thinned)
+        return thinned
 
     # --- Поиск и котировка по любой монете из топ-400 --------------------------
 

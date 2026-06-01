@@ -91,6 +91,15 @@ async def markets(limit: int = Query(100, ge=1, le=100)) -> dict:
     return {"coins": await market_analytics.markets(limit=limit)}
 
 
+@router.get("/coin/chart")
+async def coin_chart(
+    symbol: str = Query(..., min_length=1),
+    days: int = Query(1, ge=1, le=365),
+) -> dict:
+    """Ряд цены монеты за N дней (для графика в карточке монеты)."""
+    return {"symbol": symbol.upper(), "days": days, "prices": await market_analytics.coin_chart(symbol, days)}
+
+
 @router.get("/coins/search")
 async def coins_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50)) -> dict:
     """Поиск монеты по тикеру/имени среди топ-400 (для автодополнения)."""
