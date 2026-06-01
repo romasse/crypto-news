@@ -61,6 +61,16 @@
     .search-info .px { color: var(--text); font-weight: 600; }
     .search-info .up { color: var(--bull); } .search-info .down { color: var(--bear); }
     .search-info .clear { cursor: pointer; color: var(--accent); border: none; background: none; font-size: 13px; }
+    .search-info .star { cursor: pointer; border: none; background: none; font-size: 14px; color: var(--accent); }
+    .watchlist { display: flex; gap: 8px; align-items: center; padding: 8px 20px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--border); }
+    .watchlist:empty { display: none; }
+    .watchlist .wl-label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+    .wl-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; }
+    .wl-chip:hover { border-color: var(--accent); }
+    .wl-chip .x { color: var(--muted); font-size: 12px; }
+    .wl-chip .x:hover { color: var(--bear); }
     .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
       overflow-x: auto; }
     .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
@@ -102,6 +112,7 @@
   </header>
 
   <div class="market" id="market"></div>
+  <div class="watchlist" id="watchlist"></div>
 
   <main>
     <section class="panel">
@@ -327,6 +338,28 @@
       loadFeed();
     }
 
+    // --- Watchlist (избранные монеты) в localStorage ---
+    const WL_KEY = 'cn_watchlist';
+    const getWatchlist = () => { try { return JSON.parse(localStorage.getItem(WL_KEY)) || []; } catch { return []; } };
+    const saveWatchlist = (a) => localStorage.setItem(WL_KEY, JSON.stringify(a));
+    const inWatchlist = (s) => getWatchlist().includes(s);
+    function toggleWatch(sym) {
+      let wl = getWatchlist();
+      wl = wl.includes(sym) ? wl.filter(x => x !== sym) : [...wl, sym];
+      saveWatchlist(wl); renderWatchlist();
+    }
+    function renderWatchlist() {
+      const el = document.getElementById('watchlist');
+      const wl = getWatchlist();
+      if (!wl.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<span class="wl-label">★ Избранное:</span>' + wl.map(s =>
+        `<span class="wl-chip"><span class="wl-go" data-go="${s}">${s}</span><span class="x" data-x="${s}">✕</span></span>`).join('');
+      el.querySelectorAll('.wl-go').forEach(n => n.onclick = () => {
+        document.getElementById('coinSearch').value = n.dataset.go; doSearch();
+      });
+      el.querySelectorAll('.x').forEach(n => n.onclick = (e) => { e.stopPropagation(); toggleWatch(n.dataset.x); });
+    }
+
     async function doSearch() {
       const q = document.getElementById('coinSearch').value.trim();
       const info = document.getElementById('searchInfo');
@@ -347,10 +380,15 @@
         const cls = ch == null ? '' : ch >= 0 ? 'up' : 'down';
         const px = c.price != null ? '$' + Number(c.price).toLocaleString('en-US') : '—';
         const chTxt = ch == null ? '' : ` <span class="${cls}">${ch>=0?'+':''}${ch.toFixed(2)}%</span>`;
+        const star = inWatchlist(c.symbol) ? '★' : '☆';
         info.innerHTML = `<span class="px">${c.symbol}</span><span>${px}</span>${chTxt}`
           + ` <span class="muted">(${lastItems.length} нов.)</span>`
+          + ` <button class="star" id="starBtn" title="В избранное">${star}</button>`
           + ` <button class="clear" id="clearSearch">сброс ✕</button>`;
         document.getElementById('clearSearch').onclick = clearSearch;
+        document.getElementById('starBtn').onclick = (e) => {
+          toggleWatch(c.symbol); e.target.textContent = inWatchlist(c.symbol) ? '★' : '☆';
+        };
       } catch {}
     }
 
@@ -358,7 +396,7 @@
     document.getElementById('searchBtn').onclick = doSearch;
     document.getElementById('coinSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
     document.getElementById('eventFilter').onchange = renderFiltered;
-    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment(); loadCoinList();
+    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment(); loadCoinList(); renderWatchlist();
   </script>
 </body>
 </html>
