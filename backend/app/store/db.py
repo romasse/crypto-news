@@ -38,6 +38,9 @@ class Store:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
+        # гарантируем схему на каждом подключении (идемпотентно): если файл БД
+        # пропал/пересоздан, запросы не упадут с "no such table".
+        conn.executescript(_SCHEMA)
         return conn
 
     def _init_schema(self) -> None:

@@ -56,6 +56,11 @@
     .empty { color: var(--muted); padding: 40px 0; text-align: center; }
     .stat { font-size: 13px; color: var(--muted); margin-top: 10px; }
     .muted { color: var(--muted); }
+    #coinSearch { min-width: 180px; }
+    .search-info { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+    .search-info .px { color: var(--text); font-weight: 600; }
+    .search-info .up { color: var(--bull); } .search-info .down { color: var(--bear); }
+    .search-info .clear { cursor: pointer; color: var(--accent); border: none; background: none; font-size: 13px; }
     .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
       overflow-x: auto; }
     .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
@@ -73,11 +78,10 @@
     <h1>🪙 Crypto News Analyzer</h1>
     <span class="badge-ai" id="aiBadge">…</span>
     <div class="controls">
-      <select id="coinFilter">
-        <option value="">Все монеты</option>
-        <option>BTC</option><option>ETH</option><option>SOL</option>
-        <option>XRP</option><option>BNB</option><option>DOGE</option>
-      </select>
+      <input id="coinSearch" list="coinList" placeholder="Монета: BTC, Solana…" autocomplete="off" />
+      <datalist id="coinList"></datalist>
+      <button id="searchBtn">Поиск</button>
+      <span id="searchInfo" class="search-info"></span>
       <select id="eventFilter">
         <option value="">Все события</option>
         <option value="upgrade">Апгрейды</option>
@@ -121,6 +125,7 @@
     const API = location.origin;
     let chart;
     let lastItems = [];
+    let currentCoin = '';   // активный фильтр по монете (символ) — задаётся поиском
     const EV_LABEL = { upgrade:'Апгрейд', collaboration:'Коллаб', announcement:'Анонс',
       listing:'Листинг', regulation:'Регуляторика', market:'Рынок', other:'Прочее' };
 
@@ -277,8 +282,7 @@
     }
 
     async function loadFeed() {
-      const coin = document.getElementById('coinFilter').value;
-      const url = `${API}/api/feed${coin ? `?coin=${coin}` : ''}`;
+      const url = `${API}/api/feed${currentCoin ? `?coin=${currentCoin}` : ''}`;
       lastItems = await (await fetch(url)).json();
       renderFiltered();
       if (lastItems.length) renderCorrelation(lastItems[0].analysis.correlation_check);
@@ -288,10 +292,55 @@
       try { renderChart(await (await fetch(`${API}/api/sentiment`)).json()); } catch {}
     }
 
+    // --- Поиск по любой монете из топ-400 ---
+    async function loadCoinList() {
+      try {
+        const u = await (await fetch(`${API}/api/universe?limit=400`)).json();
+        const dl = document.getElementById('coinList');
+        dl.innerHTML = (u.coins || []).map(c =>
+          `<option value="${c.symbol}">${c.name}</option>`).join('');
+      } catch {}
+    }
+
+    function clearSearch() {
+      currentCoin = '';
+      document.getElementById('coinSearch').value = '';
+      document.getElementById('searchInfo').innerHTML = '';
+      loadFeed();
+    }
+
+    async function doSearch() {
+      const q = document.getElementById('coinSearch').value.trim();
+      const info = document.getElementById('searchInfo');
+      if (!q) { clearSearch(); return; }
+      // резолвим введённое (тикер или имя) в символ через поиск по вселенной
+      let sym = q.toUpperCase();
+      try {
+        const r = await (await fetch(`${API}/api/coins/search?q=${encodeURIComponent(q)}&limit=1`)).json();
+        if (r.results && r.results.length) sym = r.results[0].symbol;
+        else { info.innerHTML = `<span>«${q}» не найдено в топ-400</span>`; return; }
+      } catch {}
+      currentCoin = sym;
+      await loadFeed();
+      // показываем котировку найденной монеты
+      try {
+        const c = await (await fetch(`${API}/api/coin?symbol=${sym}`)).json();
+        const ch = c.change_24h;
+        const cls = ch == null ? '' : ch >= 0 ? 'up' : 'down';
+        const px = c.price != null ? '$' + Number(c.price).toLocaleString('en-US') : '—';
+        const chTxt = ch == null ? '' : ` <span class="${cls}">${ch>=0?'+':''}${ch.toFixed(2)}%</span>`;
+        info.innerHTML = `<span class="px">${c.symbol}</span><span>${px}</span>${chTxt}`
+          + ` <span class="muted">(${lastItems.length} нов.)</span>`
+          + ` <button class="clear" id="clearSearch">сброс ✕</button>`;
+        document.getElementById('clearSearch').onclick = clearSearch;
+      } catch {}
+    }
+
     document.getElementById('collectBtn').onclick = collect;
-    document.getElementById('coinFilter').onchange = loadFeed;
+    document.getElementById('searchBtn').onclick = doSearch;
+    document.getElementById('coinSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
     document.getElementById('eventFilter').onchange = renderFiltered;
-    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment();
+    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment(); loadCoinList();
   </script>
 </body>
 </html>

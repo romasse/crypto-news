@@ -112,6 +112,9 @@ class MarketAnalytics:
         if cached is not None:
             return cached
         result = {"fear_greed": await self._fear_greed(), "altseason": await self._altseason()}
+        # не кэшируем полностью пустой ответ (rate-limit) — чтобы быстро повторить
+        if result["fear_greed"] is None and result["altseason"] is None:
+            return result
         return self._indices.set(result)
 
     async def _fear_greed(self) -> Optional[dict]:
@@ -184,6 +187,62 @@ class MarketAnalytics:
         except Exception:
             return coins[:limit]
         return self._universe.set(coins)[:limit]
+
+    # --- Поиск и котировка по любой монете из топ-400 --------------------------
+
+    async def search(self, q: str, limit: int = 10) -> list[dict]:
+        """Поиск монеты по тикеру/имени среди топ-400 (вселенная rank-упорядочена)."""
+        coins = await self.universe(400)
+        ql = q.strip().lower()
+        if not ql:
+            return []
+        starts = [c for c in coins if c["symbol"].lower().startswith(ql)]
+        contains = [
+            c for c in coins
+            if c not in starts and (ql in c["symbol"].lower() or ql in (c["name"] or "").lower())
+        ]
+        return (starts + contains)[:limit]
+
+    async def coin_quote(self, symbol: str) -> Optional[dict]:
+        """Текущая котировка монеты по тикеру.
+
+        Сначала пробуем уже закэшированные данные топ-100 (без доп. запроса к API —
+        бережём rate-limit), для монет вне топ-100 — одиночный simple/price.
+        """
+        coins = await self.universe(400)
+        c = next((x for x in coins if x["symbol"] == symbol.upper()), None)
+        if not c:
+            return None
+
+        # 1) из кэша топ-100 — без обращения к сети
+        try:
+            m = next((x for x in await self._markets_top100() if x.get("id") == c["id"]), None)
+        except Exception:
+            m = None
+        if m:
+            return {
+                "symbol": c["symbol"], "name": c["name"], "rank": c["rank"],
+                "price": m.get("current_price"),
+                "change_24h": m.get("price_change_percentage_24h"),
+                "vol_24h": m.get("total_volume"),
+            }
+
+        # 2) монета вне топ-100 — одиночный запрос (может упереться в rate-limit)
+        try:
+            data = await self._get_json(
+                "https://api.coingecko.com/api/v3/simple/price",
+                {"ids": c["id"], "vs_currencies": "usd",
+                 "include_24hr_change": "true", "include_24hr_vol": "true"},
+            )
+            d = data.get(c["id"], {})
+        except Exception:
+            d = {}
+        return {
+            "symbol": c["symbol"], "name": c["name"], "rank": c["rank"],
+            "price": d.get("usd"),
+            "change_24h": d.get("usd_24h_change"),
+            "vol_24h": d.get("usd_24h_vol"),
+        }
 
 
 market_analytics = MarketAnalytics()

@@ -70,6 +70,19 @@ async def universe(limit: int = Query(400, ge=1, le=400)) -> dict:
     return {"count": len(coins), "coins": coins}
 
 
+@router.get("/coins/search")
+async def coins_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50)) -> dict:
+    """Поиск монеты по тикеру/имени среди топ-400 (для автодополнения)."""
+    return {"results": await market_analytics.search(q, limit=limit)}
+
+
+@router.get("/coin")
+async def coin(symbol: str = Query(..., min_length=1)) -> dict:
+    """Котировка монеты по тикеру."""
+    quote = await market_analytics.coin_quote(symbol)
+    return quote or {"symbol": symbol.upper(), "price": None}
+
+
 @router.get("/sentiment")
 async def sentiment(hours: float = Query(2.0, ge=0.25, le=48)) -> dict:
     """Средний сентимент по монетам за окно (для графиков)."""

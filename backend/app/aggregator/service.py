@@ -10,8 +10,10 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from ..inference.analyzer import Analyzer
+from ..market.analytics import market_analytics
 from ..market.provider import market_provider
 from ..models import AnalyzedItem, CollectResult, NewsItem
+from ..sources import coins as coins_mod
 from ..sources.registry import get_enabled_sources
 from ..store.db import store
 
@@ -27,6 +29,13 @@ class Aggregator:
 
     async def collect(self, window_hours: float = 2.0) -> CollectResult:
         since = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+
+        # 0. Прогреваем вселенную топ-400 и регистрируем имена для детекта монет,
+        #    чтобы новости тегировались по любой из 400 (нужно для поиска).
+        try:
+            coins_mod.set_universe(await market_analytics.universe(limit=400))
+        except Exception:
+            pass
 
         # 1. Сбор из всех включённых источников параллельно
         sources = get_enabled_sources()
