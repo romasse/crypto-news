@@ -11,6 +11,7 @@ from typing import Optional
 import httpx
 
 from ..models import CorrelationCheck
+from .coingecko import coingecko
 
 # наш тикер -> id в CoinGecko
 _COINGECKO_IDS = {
@@ -24,10 +25,9 @@ _COINGECKO_IDS = {
 }
 _ID_TO_TICKER = {v: k for k, v in _COINGECKO_IDS.items()}
 
-_COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price"
 _BINANCE_FUNDING_URL = "https://fapi.binance.com/fapi/v1/premiumIndex"
 
-_CACHE_TTL = 60.0  # сек
+_CACHE_TTL = 90.0  # сек
 
 
 class MarketProvider:
@@ -43,10 +43,7 @@ class MarketProvider:
             "include_24hr_vol": "true",
             "include_24hr_change": "true",
         }
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(_COINGECKO_URL, params=params)
-            resp.raise_for_status()
-            raw = resp.json()
+        raw = await coingecko.get("/simple/price", params)
         out: dict[str, dict] = {}
         for cg_id, data in raw.items():
             ticker = _ID_TO_TICKER.get(cg_id, cg_id.upper())

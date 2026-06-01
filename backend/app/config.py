@@ -26,6 +26,13 @@ class Settings:
     def ai_enabled(self) -> bool:
         return bool(self.anthropic_api_key)
 
+    # CoinGecko: опциональный ключ для повышения лимитов.
+    # - бесплатный demo-ключ (coingecko.com/en/api) → заголовок x-cg-demo-api-key
+    # - платный Pro-ключ → COINGECKO_PRO=1, заголовок x-cg-pro-api-key + pro-домен
+    # Без ключа работает публичный тариф (жёсткий rate-limit).
+    coingecko_api_key: str | None = os.getenv("COINGECKO_API_KEY") or None
+    coingecko_pro: bool = os.getenv("COINGECKO_PRO", "").lower() in ("1", "true", "yes")
+
     # Хранилище
     db_path: str = os.getenv("CRYPTO_NEWS_DB", str(BASE_DIR / "data" / "crypto_news.db"))
 

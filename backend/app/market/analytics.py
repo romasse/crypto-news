@@ -13,8 +13,8 @@ from typing import Optional
 
 import httpx
 
-_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
-_MARKETS_URL = "https://api.coingecko.com/api/v3/coins/markets"
+from .coingecko import coingecko
+
 _FNG_URL = "https://api.alternative.me/fng/"
 
 # стейблкоины исключаем из altseason-расчёта (их не сравниваем с BTC)
@@ -51,12 +51,13 @@ class MarketAnalytics:
             r.raise_for_status()
             return r.json()
 
-    async def _markets_top100(self) -> list[dict]:
-        cached = self._markets100.get()
-        if cached is not None:
-            return cached
-        data = await self._get_json(
-            _MARKETS_URL,
+    async def _markets_top100(self, force: bool = False) -> list[dict]:
+        if not force:
+            cached = self._markets100.get()
+            if cached is not None:
+                return cached
+        data = await coingecko.get(
+            "/coins/markets",
             {
                 "vs_currency": "usd",
                 "order": "market_cap_desc",
@@ -74,7 +75,7 @@ class MarketAnalytics:
         if cached is not None:
             return cached
         try:
-            g = (await self._get_json(_GLOBAL_URL))["data"]
+            g = (await coingecko.get("/global"))["data"]
             markets = await self._markets_top100()
         except Exception:
             return {}
@@ -143,7 +144,16 @@ class MarketAnalytics:
         btc = next((c for c in markets if c.get("symbol", "").lower() == "btc"), None)
         btc_perf = perf(btc) if btc else None
         if btc_perf is None:
-            return None  # нет исторических данных у источника — индекс недоступен
+            # в кэше markets нет данных об изменении (CoinGecko отдаёт их непостоянно)
+            # — пробуем один свежий запрос в обход кэша
+            try:
+                markets = await self._markets_top100(force=True)
+            except Exception:
+                return None
+            btc = next((c for c in markets if c.get("symbol", "").lower() == "btc"), None)
+            btc_perf = perf(btc) if btc else None
+            if btc_perf is None:
+                return None
 
         alts = [
             c
@@ -168,8 +178,8 @@ class MarketAnalytics:
         coins: list[dict] = []
         try:
             for page in (1, 2):  # 2 страницы по 200 = топ-400
-                data = await self._get_json(
-                    _MARKETS_URL,
+                data = await coingecko.get(
+                    "/coins/markets",
                     {
                         "vs_currency": "usd",
                         "order": "market_cap_desc",
@@ -231,8 +241,8 @@ class MarketAnalytics:
 
         # 2) монета вне топ-100 — одиночный запрос (может упереться в rate-limit)
         try:
-            data = await self._get_json(
-                "https://api.coingecko.com/api/v3/simple/price",
+            data = await coingecko.get(
+                "/simple/price",
                 {"ids": c["id"], "vs_currencies": "usd",
                  "include_24hr_change": "true", "include_24hr_vol": "true"},
             )
