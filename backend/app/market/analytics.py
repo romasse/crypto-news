@@ -44,6 +44,10 @@ class MarketAnalytics:
         self._indices = _TTLCache(300)
         self._universe = _TTLCache(3600)
         self._markets100 = _TTLCache(120)
+        # последнее успешное значение индексов — показываем при кратком сбое API,
+        # чтобы графа не обнулялась в «нет данных» из-за временного 429
+        self._last_fg: Optional[dict] = None
+        self._last_alt: Optional[dict] = None
 
     async def _get_json(self, url: str, params: dict | None = None):
         async with httpx.AsyncClient(timeout=20) as client:
@@ -112,7 +116,20 @@ class MarketAnalytics:
         cached = self._indices.get()
         if cached is not None:
             return cached
-        result = {"fear_greed": await self._fear_greed(), "altseason": await self._altseason()}
+        fg = await self._fear_greed()
+        alt = await self._altseason()
+        # запоминаем последнее успешное значение
+        if fg is not None:
+            self._last_fg = fg
+        if alt is not None:
+            self._last_alt = alt
+        # при сбое подставляем последнее известное (со staleness-флагом)
+        result = {
+            "fear_greed": fg or self._last_fg,
+            "altseason": alt or self._last_alt,
+            "stale": (fg is None and self._last_fg is not None)
+            or (alt is None and self._last_alt is not None),
+        }
         # не кэшируем полностью пустой ответ (rate-limit) — чтобы быстро повторить
         if result["fear_greed"] is None and result["altseason"] is None:
             return result
