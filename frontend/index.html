@@ -144,7 +144,13 @@
 
     function renderFeed(items) {
       const el = document.getElementById('news');
-      if (!items.length) { el.innerHTML = '<div class="empty">Нет событий за выбранное окно.</div>'; return; }
+      if (!items.length) {
+        const msg = currentCoin
+          ? `Нет новостей по ${currentCoin} в собранных данных.<br>Нажми «Собрать сейчас» или выбери период побольше — котировка монеты показана выше.`
+          : 'Нет событий. Нажми «Собрать сейчас», чтобы запустить конвейер.';
+        el.innerHTML = `<div class="empty">${msg}</div>`;
+        return;
+      }
       el.innerHTML = items.map(a => {
         const it = a.item, an = a.analysis;
         const time = new Date(it.published_at).toLocaleString('ru-RU');
@@ -313,12 +319,12 @@
       const q = document.getElementById('coinSearch').value.trim();
       const info = document.getElementById('searchInfo');
       if (!q) { clearSearch(); return; }
-      // резолвим введённое (тикер или имя) в символ через поиск по вселенной
+      // резолвим введённое (тикер или имя) в символ через поиск по вселенной;
+      // если вселенная недоступна (rate-limit) — используем введённый текст как тикер
       let sym = q.toUpperCase();
       try {
         const r = await (await fetch(`${API}/api/coins/search?q=${encodeURIComponent(q)}&limit=1`)).json();
         if (r.results && r.results.length) sym = r.results[0].symbol;
-        else { info.innerHTML = `<span>«${q}» не найдено в топ-400</span>`; return; }
       } catch {}
       currentCoin = sym;
       await loadFeed();

@@ -62,7 +62,7 @@ class MarketAnalytics:
                 "order": "market_cap_desc",
                 "per_page": 100,
                 "page": 1,
-                "price_change_percentage": "90d,30d,1y",
+                "price_change_percentage": "7d,30d,90d,1y",
             },
         )
         return self._markets100.set(data)
@@ -132,9 +132,11 @@ class MarketAnalytics:
             return None
 
         def perf(c):
+            # предпочитаем 30д/7д (надёжнее заполнены на free-tier), затем 90д/1г
             return (
-                c.get("price_change_percentage_90d_in_currency")
-                or c.get("price_change_percentage_30d_in_currency")
+                c.get("price_change_percentage_30d_in_currency")
+                or c.get("price_change_percentage_7d_in_currency")
+                or c.get("price_change_percentage_90d_in_currency")
                 or c.get("price_change_percentage_1y_in_currency")
             )
 
