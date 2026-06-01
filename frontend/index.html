@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crypto News Analyzer</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <style>
     :root {
       --bg: #0b0e14; --panel: #141925; --border: #232a3a;
@@ -89,21 +88,8 @@
       border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; }
     .tab.active { color: var(--text); background: var(--panel); border-color: var(--border); }
     #bubblesView { padding: 8px 12px 0; }
-    #bubbles { width: 100%; height: calc(100vh - 150px); display: block; }
-    #bubbles text { pointer-events: none; user-select: none; }
-    .bubble-tip { position: fixed; z-index: 50; pointer-events: none; max-width: 260px;
-      background: #0b0e14; border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px 12px; font-size: 13px; color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
-    .bubble-tip b { font-size: 14px; }
-    .bubble-tip .row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); margin-top: 2px; }
-    .bubble-tip .row span:last-child { color: var(--text); }
-    .bubble-tip .up { color: var(--bull); } .bubble-tip .down { color: var(--bear); }
-    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .seg-btn { background: transparent; border: none; color: var(--muted); padding: 8px 14px;
-      cursor: pointer; font-size: 14px; border-radius: 0; }
-    .seg-btn.active { background: var(--panel); color: var(--text); }
-    #marketTable { max-height: calc(100vh - 150px); overflow: auto; padding: 0 4px; }
-    .mtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #marketTable { max-height: calc(100vh - 130px); overflow: auto; padding: 0 4px; }
+    .mtable { display: inline-table; width: auto; min-width: 720px; border-collapse: collapse; font-size: 13px; }
     .mtable th { position: sticky; top: 0; background: #0f131c; color: var(--muted);
       text-align: right; padding: 10px 9px; cursor: pointer; white-space: nowrap;
       border-bottom: 1px solid var(--border); user-select: none; }
@@ -115,6 +101,9 @@
     .mtable tbody tr { cursor: pointer; }
     .mtable tbody tr:hover { background: rgba(247,166,0,.06); }
     .mtable .up { color: var(--bull); } .mtable .down { color: var(--bear); }
+    .mtable td.coin .name { color: var(--muted); margin-left: 6px;
+      display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; vertical-align: middle; }
     /* модальное окно монеты */
     .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
       background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
@@ -159,25 +148,6 @@
       <button class="tab active" data-tab="feed">Лента</button>
       <button class="tab" data-tab="bubbles">Объём рынка</button>
     </nav>
-    <div class="controls" id="bubbleControls" style="display:none">
-      <div class="seg" id="viewToggle">
-        <button class="seg-btn active" data-view="bubbles">Пузыри</button>
-        <button class="seg-btn" data-view="table">Таблица</button>
-      </div>
-      <span id="bubbleOnly">
-        <select id="bubbleMetric">
-          <option value="market_cap">Размер: Капитализация</option>
-          <option value="volume">Размер: Объём 24ч</option>
-          <option value="price">Размер: Цена</option>
-        </select>
-        <select id="bubblePeriod">
-          <option value="change_1h">Изменение: 1ч</option>
-          <option value="change_24h" selected>Изменение: 24ч</option>
-          <option value="change_7d">Изменение: 7д</option>
-          <option value="change_30d">Изменение: 30д</option>
-        </select>
-      </span>
-    </div>
     <div class="controls" id="feedControls">
       <input id="coinSearch" list="coinList" placeholder="Монета: BTC, Solana…" autocomplete="off" />
       <datalist id="coinList"></datalist>
@@ -226,9 +196,7 @@
   </div>
 
   <section id="bubblesView" style="display:none">
-    <svg id="bubbles"></svg>
-    <div id="bubbleTip" class="bubble-tip" style="display:none"></div>
-    <div id="marketTable" style="display:none"></div>
+    <div id="marketTable"></div>
   </section>
 
   <div id="coinModal" class="modal" style="display:none">
@@ -518,49 +486,35 @@
       } catch {}
     }
 
-    // --- Вкладки: Лента / Объём рынка (пузыри) ---
-    let bubblesData = [], bubbleSim = null, bubblesLoaded = false;
-    let bubbleView = 'bubbles';
+    // --- Вкладка «Объём рынка»: таблица топ-100 ---
+    let bubblesData = [], bubblesLoaded = false;
     let tableSort = { key: 'market_cap', dir: -1 };
     let cmChart = null, cmCoin = null, _globalCache = null;
 
     function switchTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-      const bubbles = name === 'bubbles';
-      document.getElementById('feedView').style.display = bubbles ? 'none' : '';
-      document.getElementById('bubblesView').style.display = bubbles ? '' : 'none';
-      document.getElementById('feedControls').style.display = bubbles ? 'none' : '';
-      document.getElementById('bubbleControls').style.display = bubbles ? '' : 'none';
-      if (bubbles && !bubblesLoaded) { bubblesLoaded = true; loadBubbles(); }
-      else if (bubbles) renderBubblesView();
-      else if (bubbleSim) bubbleSim.stop();  // скрыта — не жжём CPU
+      const market = name === 'bubbles';
+      document.getElementById('feedView').style.display = market ? 'none' : '';
+      document.getElementById('bubblesView').style.display = market ? '' : 'none';
+      document.getElementById('feedControls').style.display = market ? 'none' : '';
+      if (market && !bubblesLoaded) { bubblesLoaded = true; loadMarketTable(); }
+      else if (market) renderTable();
     }
 
-    async function loadBubbles() {
+    async function loadMarketTable() {
       try {
         const d = await (await fetch(`${API}/api/markets?limit=100`)).json();
         bubblesData = (d.coins || []).filter(c => c.market_cap);
       } catch { bubblesData = []; }
-      renderBubblesView();
-    }
-
-    function renderBubblesView() {
-      const table = bubbleView === 'table';
-      document.getElementById('bubbles').style.display = table ? 'none' : '';
-      document.getElementById('marketTable').style.display = table ? '' : 'none';
-      document.getElementById('bubbleOnly').style.display = table ? 'none' : '';
-      if (table) { if (bubbleSim) bubbleSim.stop(); renderTable(); }
-      else drawBubbles();
-    }
-
-    function setBubbleView(v) {
-      bubbleView = v;
-      document.querySelectorAll('#viewToggle .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
-      renderBubblesView();
+      renderTable();
     }
 
     function renderTable() {
       const el = document.getElementById('marketTable');
+      if (!bubblesData.length) {
+        el.innerHTML = '<div class="empty">Нет данных (CoinGecko rate-limit) — попробуй позже.</div>';
+        return;
+      }
       const num = v => (v == null ? -Infinity : v);
       const data = [...bubblesData].sort((a, b) => {
         const k = tableSort.key;
@@ -576,7 +530,7 @@
       const head = cols.map(([k,l]) => `<th data-k="${k}">${l}${arrow(k)}</th>`).join('');
       const rows = data.map(c => `<tr data-sym="${c.symbol}">
         <td>${c.rank ?? ''}</td>
-        <td class="coin"><img src="${c.image || ''}" onerror="this.style.display='none'"/><b>${c.symbol}</b> <span class="muted">${c.name || ''}</span></td>
+        <td class="coin"><img src="${c.image || ''}" onerror="this.style.display='none'"/><b>${c.symbol}</b> <span class="muted name">${c.name || ''}</span></td>
         <td>${price(c.price)}</td>
         <td>${fmtUsd(c.market_cap)}</td>
         <td>${fmtUsd(c.volume)}</td>
@@ -594,83 +548,6 @@
       });
     }
 
-    function drawBubbles() {
-      const svg = d3.select('#bubbles');
-      const W = svg.node().clientWidth, H = svg.node().clientHeight;
-      svg.selectAll('*').remove();
-      if (!bubblesData.length) {
-        svg.append('text').attr('x', W/2).attr('y', H/2).attr('text-anchor','middle')
-          .attr('fill','#8b94a7').text('Нет данных (CoinGecko rate-limit) — попробуй позже');
-        return;
-      }
-      const metric = document.getElementById('bubbleMetric').value;
-      const period = document.getElementById('bubblePeriod').value;  // change_1h/24h/7d/30d
-      const val = c => metric === 'price' ? (c.price || 0)
-                     : metric === 'volume' ? (c.volume || 0) : (c.market_cap || 0);
-      const chg = c => c[period];
-      const maxV = d3.max(bubblesData, val) || 1;
-      const rScale = d3.scaleSqrt().domain([0, maxV]).range([8, Math.min(W, H) / 6]);
-      const color = c => { const v = chg(c); return v > 0 ? '#2ecc71' : v < 0 ? '#e74c3c' : '#7f8ea3'; };
-      const nodes = bubblesData.map(c => ({ ...c, r: rScale(val(c)), x: W/2 + (Math.random()-0.5)*W, y: H/2 + (Math.random()-0.5)*H }));
-
-      const node = svg.selectAll('g').data(nodes).join('g').style('cursor','pointer')
-        .on('click', (e, d) => openCoinModal(d));
-      node.append('circle').attr('r', d => d.r)
-        .attr('fill', d => color(d)).attr('fill-opacity', 0.22)
-        .attr('stroke', d => color(d)).attr('stroke-width', 1.5);
-      node.append('text').text(d => d.symbol).attr('text-anchor','middle').attr('dy','-0.05em')
-        .attr('fill','#e6e9f0').attr('font-weight',600)
-        .attr('font-size', d => Math.max(8, Math.min(d.r/2.2, 18)))
-        .attr('opacity', d => d.r > 12 ? 1 : 0);
-      node.append('text').text(d => { const v = chg(d); return v == null ? '—' : (v>=0?'+':'') + v.toFixed(1) + '%'; })
-        .attr('text-anchor','middle').attr('dy','1.15em').attr('fill', d => color(d))
-        .attr('font-size', d => Math.max(8, Math.min(d.r/3.2, 13)))
-        .attr('opacity', d => d.r > 18 ? 1 : 0);
-
-      // карточка по наведению: цена, капа, объём, все периоды
-      const tip = document.getElementById('bubbleTip');
-      const pct = v => v == null ? '<span>—</span>'
-        : `<span class="${v>=0?'up':'down'}">${v>=0?'+':''}${v.toFixed(2)}%</span>`;
-      node.on('mouseenter', (e, d) => {
-        const price = d.price != null ? '$' + Number(d.price).toLocaleString('en-US', {maximumFractionDigits: 8}) : '—';
-        tip.innerHTML = `<b>${d.name}</b> <span class="muted">${d.symbol} · #${d.rank}</span>`
-          + `<div class="row"><span>Цена</span><span>${price}</span></div>`
-          + `<div class="row"><span>Капитализация</span><span>${fmtUsd(d.market_cap)}</span></div>`
-          + `<div class="row"><span>Объём 24ч</span><span>${fmtUsd(d.volume)}</span></div>`
-          + `<div class="row"><span>1ч / 24ч</span><span>${pct(d.change_1h)} / ${pct(d.change_24h)}</span></div>`
-          + `<div class="row"><span>7д / 30д</span><span>${pct(d.change_7d)} / ${pct(d.change_30d)}</span></div>`;
-        tip.style.display = 'block';
-      });
-      node.on('mousemove', (e) => {
-        tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 270) + 'px';
-        tip.style.top = Math.min(e.clientY + 14, window.innerHeight - 130) + 'px';
-      });
-      node.on('mouseleave', () => { tip.style.display = 'none'; });
-
-      // стартовые скорости для живого движения
-      nodes.forEach(d => { d.vx = (Math.random()-0.5)*1.2; d.vy = (Math.random()-0.5)*1.2; });
-
-      // случайный «дрейф» — постоянно подкидывает энергию, чтобы пузыри не замирали
-      const drift = () => nodes.forEach(d => { d.vx += (Math.random()-0.5)*0.25; d.vy += (Math.random()-0.5)*0.25; });
-
-      if (bubbleSim) bubbleSim.stop();
-      bubbleSim = d3.forceSimulation(nodes)
-        .alphaDecay(0).alphaMin(0).velocityDecay(0.12)  // не затухать → плавают вечно
-        .force('x', d3.forceX(W/2).strength(0.0015))     // лёгкое притяжение к центру
-        .force('y', d3.forceY(H/2).strength(0.0015))
-        .force('collide', d3.forceCollide().radius(d => d.r + 2).strength(0.85))
-        .force('drift', drift)
-        .on('tick', () => node.attr('transform', d => {
-          // ограничиваем скорость и отскакиваем от стенок (сохраняя импульс)
-          d.vx = Math.max(-2.2, Math.min(2.2, d.vx));
-          d.vy = Math.max(-2.2, Math.min(2.2, d.vy));
-          if (d.x < d.r) { d.x = d.r; d.vx = Math.abs(d.vx); }
-          else if (d.x > W - d.r) { d.x = W - d.r; d.vx = -Math.abs(d.vx); }
-          if (d.y < d.r) { d.y = d.r; d.vy = Math.abs(d.vy); }
-          else if (d.y > H - d.r) { d.y = H - d.r; d.vy = -Math.abs(d.vy); }
-          return `translate(${d.x},${d.y})`;
-        }));
-    }
 
     // --- Модальное окно монеты ---
     async function getGlobal() {
@@ -754,17 +631,6 @@
     };
 
     document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
-    document.getElementById('bubbleMetric').onchange = drawBubbles;
-    document.getElementById('bubblePeriod').onchange = drawBubbles;
-    document.querySelectorAll('#viewToggle .seg-btn').forEach(b => b.onclick = () => setBubbleView(b.dataset.view));
-    // переразложить пузыри при изменении размера окна (иначе обрезаются)
-    let _resizeT;
-    window.addEventListener('resize', () => {
-      clearTimeout(_resizeT);
-      _resizeT = setTimeout(() => {
-        if (document.getElementById('bubblesView').style.display !== 'none' && bubblesLoaded && bubbleView === 'bubbles') drawBubbles();
-      }, 200);
-    });
     document.getElementById('collectBtn').onclick = collect;
     document.getElementById('searchBtn').onclick = doSearch;
     document.getElementById('coinSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
