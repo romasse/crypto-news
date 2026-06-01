@@ -67,7 +67,7 @@ class MarketAnalytics:
                 "order": "market_cap_desc",
                 "per_page": 100,
                 "page": 1,
-                "price_change_percentage": "7d,30d,90d,1y",
+                "price_change_percentage": "1h,24h,7d,30d,90d",
             },
         )
         return self._markets100.set(data)
@@ -233,7 +233,11 @@ class MarketAnalytics:
                 "price": c.get("current_price"),
                 "market_cap": c.get("market_cap"),
                 "volume": c.get("total_volume"),
-                "change_24h": c.get("price_change_percentage_24h"),
+                "change_1h": c.get("price_change_percentage_1h_in_currency"),
+                "change_24h": c.get("price_change_percentage_24h_in_currency")
+                or c.get("price_change_percentage_24h"),
+                "change_7d": c.get("price_change_percentage_7d_in_currency"),
+                "change_30d": c.get("price_change_percentage_30d_in_currency"),
             })
         return out
 

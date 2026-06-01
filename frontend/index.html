@@ -79,6 +79,13 @@
     #bubblesView { padding: 8px 12px 0; }
     #bubbles { width: 100%; height: calc(100vh - 150px); display: block; }
     #bubbles text { pointer-events: none; user-select: none; }
+    .bubble-tip { position: fixed; z-index: 50; pointer-events: none; max-width: 260px;
+      background: #0b0e14; border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-size: 13px; color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+    .bubble-tip b { font-size: 14px; }
+    .bubble-tip .row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); margin-top: 2px; }
+    .bubble-tip .row span:last-child { color: var(--text); }
+    .bubble-tip .up { color: var(--bull); } .bubble-tip .down { color: var(--bear); }
     .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
       overflow-x: auto; }
     .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
@@ -103,7 +110,13 @@
       <select id="bubbleMetric">
         <option value="market_cap">Размер: Капитализация</option>
         <option value="volume">Размер: Объём 24ч</option>
-        <option value="change">Размер: |Изменение 24ч|</option>
+        <option value="price">Размер: Цена</option>
+      </select>
+      <select id="bubblePeriod">
+        <option value="change_1h">Изменение: 1ч</option>
+        <option value="change_24h" selected>Изменение: 24ч</option>
+        <option value="change_7d">Изменение: 7д</option>
+        <option value="change_30d">Изменение: 30д</option>
       </select>
     </div>
     <div class="controls" id="feedControls">
@@ -155,6 +168,7 @@
 
   <section id="bubblesView" style="display:none">
     <svg id="bubbles"></svg>
+    <div id="bubbleTip" class="bubble-tip" style="display:none"></div>
   </section>
 
   <script>
@@ -450,11 +464,13 @@
         return;
       }
       const metric = document.getElementById('bubbleMetric').value;
-      const val = c => metric === 'change' ? Math.abs(c.change_24h || 0)
+      const period = document.getElementById('bubblePeriod').value;  // change_1h/24h/7d/30d
+      const val = c => metric === 'price' ? (c.price || 0)
                      : metric === 'volume' ? (c.volume || 0) : (c.market_cap || 0);
+      const chg = c => c[period];
       const maxV = d3.max(bubblesData, val) || 1;
       const rScale = d3.scaleSqrt().domain([0, maxV]).range([8, Math.min(W, H) / 6]);
-      const color = c => (c.change_24h > 0) ? '#2ecc71' : (c.change_24h < 0) ? '#e74c3c' : '#7f8ea3';
+      const color = c => { const v = chg(c); return v > 0 ? '#2ecc71' : v < 0 ? '#e74c3c' : '#7f8ea3'; };
       const nodes = bubblesData.map(c => ({ ...c, r: rScale(val(c)), x: W/2 + (Math.random()-0.5)*W, y: H/2 + (Math.random()-0.5)*H }));
 
       const node = svg.selectAll('g').data(nodes).join('g').style('cursor','pointer')
@@ -466,10 +482,30 @@
         .attr('fill','#e6e9f0').attr('font-weight',600)
         .attr('font-size', d => Math.max(8, Math.min(d.r/2.2, 18)))
         .attr('opacity', d => d.r > 12 ? 1 : 0);
-      node.append('text').text(d => (d.change_24h>=0?'+':'') + (d.change_24h||0).toFixed(1) + '%')
+      node.append('text').text(d => { const v = chg(d); return v == null ? '—' : (v>=0?'+':'') + v.toFixed(1) + '%'; })
         .attr('text-anchor','middle').attr('dy','1.15em').attr('fill', d => color(d))
         .attr('font-size', d => Math.max(8, Math.min(d.r/3.2, 13)))
         .attr('opacity', d => d.r > 18 ? 1 : 0);
+
+      // карточка по наведению: цена, капа, объём, все периоды
+      const tip = document.getElementById('bubbleTip');
+      const pct = v => v == null ? '<span>—</span>'
+        : `<span class="${v>=0?'up':'down'}">${v>=0?'+':''}${v.toFixed(2)}%</span>`;
+      node.on('mouseenter', (e, d) => {
+        const price = d.price != null ? '$' + Number(d.price).toLocaleString('en-US', {maximumFractionDigits: 8}) : '—';
+        tip.innerHTML = `<b>${d.name}</b> <span class="muted">${d.symbol} · #${d.rank}</span>`
+          + `<div class="row"><span>Цена</span><span>${price}</span></div>`
+          + `<div class="row"><span>Капитализация</span><span>${fmtUsd(d.market_cap)}</span></div>`
+          + `<div class="row"><span>Объём 24ч</span><span>${fmtUsd(d.volume)}</span></div>`
+          + `<div class="row"><span>1ч / 24ч</span><span>${pct(d.change_1h)} / ${pct(d.change_24h)}</span></div>`
+          + `<div class="row"><span>7д / 30д</span><span>${pct(d.change_7d)} / ${pct(d.change_30d)}</span></div>`;
+        tip.style.display = 'block';
+      });
+      node.on('mousemove', (e) => {
+        tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 270) + 'px';
+        tip.style.top = Math.min(e.clientY + 14, window.innerHeight - 130) + 'px';
+      });
+      node.on('mouseleave', () => { tip.style.display = 'none'; });
 
       // стартовые скорости для живого движения
       nodes.forEach(d => { d.vx = (Math.random()-0.5)*1.2; d.vy = (Math.random()-0.5)*1.2; });
@@ -498,6 +534,7 @@
 
     document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
     document.getElementById('bubbleMetric').onchange = drawBubbles;
+    document.getElementById('bubblePeriod').onchange = drawBubbles;
     // переразложить пузыри при изменении размера окна (иначе обрезаются)
     let _resizeT;
     window.addEventListener('resize', () => {
