@@ -269,17 +269,29 @@
     async function collect() {
       const btn = document.getElementById('collectBtn');
       const hours = document.getElementById('hours').value;
-      btn.disabled = true; btn.textContent = 'Собираю…';
+      btn.disabled = true; btn.textContent = 'Запуск…';
       try {
-        const r = await (await fetch(`${API}/api/collect?hours=${hours}`, { method: 'POST' })).json();
-        document.getElementById('collectStat').textContent =
-          `Окно ${r.window_hours} ч · собрано ${r.collected} · ново разобрано ${r.analyzed}`;
-        renderChart(r.sentiment_by_coin);
-        if (r.market && r.market.prices) renderMarket(r.market.prices);
-        if (r.items.length) renderCorrelation(r.items[0].analysis.correlation_check);
-        loadIndices();
-        await loadFeed();
-      } finally { btn.disabled = false; btn.textContent = 'Собрать сейчас'; }
+        await fetch(`${API}/api/collect/start?hours=${hours}`, { method: 'POST' });
+      } catch { btn.disabled = false; btn.textContent = 'Собрать сейчас'; return; }
+      pollCollect();
+    }
+
+    async function pollCollect() {
+      const btn = document.getElementById('collectBtn');
+      let s;
+      try { s = await (await fetch(`${API}/api/collect/status`)).json(); }
+      catch { setTimeout(pollCollect, 2000); return; }
+      if (s.running) {
+        const prog = s.phase === 'analyzing' && s.total ? ` ${s.done}/${s.total}` : '…';
+        btn.textContent = `Собираю${prog}`;
+        setTimeout(pollCollect, 1500);
+        return;
+      }
+      btn.disabled = false; btn.textContent = 'Собрать сейчас';
+      document.getElementById('collectStat').textContent = s.error
+        ? `Ошибка: ${s.error}`
+        : `Окно ${s.window_hours} ч · собрано ${s.collected} · ново разобрано ${s.analyzed}`;
+      loadMarket(); loadIndices(); loadSentiment(); await loadFeed();
     }
 
     function renderFiltered() {

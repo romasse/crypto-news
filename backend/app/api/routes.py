@@ -41,8 +41,23 @@ async def feed(
 async def collect(
     hours: float = Query(2.0, ge=0.25, le=48, description="Окно сбора в часах"),
 ) -> CollectResult:
-    """Time-Window: собрать и разобрать новости за последние `hours` часов."""
+    """Time-Window: собрать и разобрать новости за последние `hours` часов (синхронно)."""
     return await aggregator.collect(window_hours=hours)
+
+
+@router.post("/collect/start")
+async def collect_start(
+    hours: float = Query(2.0, ge=0.25, le=48, description="Окно сбора в часах"),
+) -> dict:
+    """Запускает сбор в фоне и сразу отвечает (не блокирует UI)."""
+    started = aggregator.start_background(window_hours=hours)
+    return {"started": started, "status": aggregator.status}
+
+
+@router.get("/collect/status")
+async def collect_status() -> dict:
+    """Статус фонового сбора: running/phase/done/total/итоги."""
+    return aggregator.status
 
 
 @router.get("/market")

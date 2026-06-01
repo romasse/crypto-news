@@ -26,6 +26,32 @@ _MAX_CONCURRENT_ANALYSES = 5
 class Aggregator:
     def __init__(self):
         self.analyzer = Analyzer()
+        # статус фонового сбора (для не-блокирующего UI)
+        self.status: dict = {
+            "running": False, "phase": "idle", "total": 0, "done": 0,
+            "collected": 0, "analyzed": 0, "window_hours": None, "error": None,
+        }
+        self._task = None
+
+    def start_background(self, window_hours: float = 2.0) -> bool:
+        """Запускает сбор в фоне, если он ещё не идёт. Возвращает, стартовали ли."""
+        if self.status["running"]:
+            return False
+        self.status.update(
+            running=True, phase="fetching", total=0, done=0,
+            collected=0, analyzed=0, window_hours=window_hours, error=None,
+        )
+        self._task = asyncio.ensure_future(self._run_background(window_hours))
+        return True
+
+    async def _run_background(self, window_hours: float) -> None:
+        try:
+            r = await self.collect(window_hours)
+            self.status.update(collected=r.collected, analyzed=r.analyzed)
+        except Exception as e:  # noqa: BLE001
+            self.status["error"] = str(e)
+        finally:
+            self.status.update(running=False, phase="done")
 
     async def collect(self, window_hours: float = 2.0) -> CollectResult:
         since = datetime.now(timezone.utc) - timedelta(hours=window_hours)
@@ -62,9 +88,14 @@ class Aggregator:
         market_context = self._market_context(snapshot)
         sem = asyncio.Semaphore(_MAX_CONCURRENT_ANALYSES)
 
+        # обновляем прогресс для фонового статуса
+        self.status.update(phase="analyzing", total=len(new_items), done=0)
+
         async def _analyze(it: NewsItem):
             async with sem:
-                return await self.analyzer.analyze(it, market_context=market_context)
+                res = await self.analyzer.analyze(it, market_context=market_context)
+                self.status["done"] += 1
+                return res
 
         analyses = await asyncio.gather(*(_analyze(it) for it in new_items))
         for item, analysis in zip(new_items, analyses):
