@@ -217,6 +217,26 @@ class MarketAnalytics:
             return coins[:limit]
         return self._universe.set(coins)[:limit]
 
+    async def markets(self, limit: int = 100) -> list[dict]:
+        """Данные для пузырей «Объём рынка»: капа/объём/изменение/лого по топ-N."""
+        try:
+            data = await self._markets_top100()
+        except Exception:
+            return []
+        out = []
+        for c in data[:limit]:
+            out.append({
+                "symbol": (c.get("symbol") or "").upper(),
+                "name": c.get("name"),
+                "image": c.get("image"),
+                "rank": c.get("market_cap_rank"),
+                "price": c.get("current_price"),
+                "market_cap": c.get("market_cap"),
+                "volume": c.get("total_volume"),
+                "change_24h": c.get("price_change_percentage_24h"),
+            })
+        return out
+
     # --- Поиск и котировка по любой монете из топ-400 --------------------------
 
     async def search(self, q: str, limit: int = 10) -> list[dict]:

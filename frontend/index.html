@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crypto News Analyzer</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <style>
     :root {
       --bg: #0b0e14; --panel: #141925; --border: #232a3a;
@@ -71,6 +72,13 @@
     .wl-chip:hover { border-color: var(--accent); }
     .wl-chip .x { color: var(--muted); font-size: 12px; }
     .wl-chip .x:hover { color: var(--bear); }
+    .tabs { display: flex; gap: 4px; }
+    .tab { background: transparent; border: 1px solid transparent; color: var(--muted);
+      border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; }
+    .tab.active { color: var(--text); background: var(--panel); border-color: var(--border); }
+    #bubblesView { padding: 8px 12px 0; }
+    #bubbles { width: 100%; height: calc(100vh - 150px); display: block; }
+    #bubbles text { pointer-events: none; user-select: none; }
     .market { display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border);
       overflow-x: auto; }
     .ticker { display: flex; gap: 8px; align-items: baseline; font-size: 13px;
@@ -87,7 +95,18 @@
   <header>
     <h1>🪙 Crypto News Analyzer</h1>
     <span class="badge-ai" id="aiBadge">…</span>
-    <div class="controls">
+    <nav class="tabs">
+      <button class="tab active" data-tab="feed">Лента</button>
+      <button class="tab" data-tab="bubbles">Объём рынка</button>
+    </nav>
+    <div class="controls" id="bubbleControls" style="display:none">
+      <select id="bubbleMetric">
+        <option value="market_cap">Размер: Капитализация</option>
+        <option value="volume">Размер: Объём 24ч</option>
+        <option value="change">Размер: |Изменение 24ч|</option>
+      </select>
+    </div>
+    <div class="controls" id="feedControls">
       <input id="coinSearch" list="coinList" placeholder="Монета: BTC, Solana…" autocomplete="off" />
       <datalist id="coinList"></datalist>
       <button id="searchBtn">Поиск</button>
@@ -111,6 +130,7 @@
     </div>
   </header>
 
+  <div id="feedView">
   <div class="market" id="market"></div>
   <div class="watchlist" id="watchlist"></div>
 
@@ -131,6 +151,11 @@
       <div class="cc" id="correlation"><span class="muted">собери данные →</span></div>
     </aside>
   </main>
+  </div>
+
+  <section id="bubblesView" style="display:none">
+    <svg id="bubbles"></svg>
+  </section>
 
   <script>
     const API = location.origin;
@@ -392,6 +417,74 @@
       } catch {}
     }
 
+    // --- Вкладки: Лента / Объём рынка (пузыри) ---
+    let bubblesData = [], bubbleSim = null, bubblesLoaded = false;
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      const bubbles = name === 'bubbles';
+      document.getElementById('feedView').style.display = bubbles ? 'none' : '';
+      document.getElementById('bubblesView').style.display = bubbles ? '' : 'none';
+      document.getElementById('feedControls').style.display = bubbles ? 'none' : '';
+      document.getElementById('bubbleControls').style.display = bubbles ? '' : 'none';
+      if (bubbles && !bubblesLoaded) { bubblesLoaded = true; loadBubbles(); }
+      else if (bubbles) drawBubbles();
+    }
+
+    async function loadBubbles() {
+      try {
+        const d = await (await fetch(`${API}/api/markets?limit=100`)).json();
+        bubblesData = (d.coins || []).filter(c => c.market_cap);
+      } catch { bubblesData = []; }
+      drawBubbles();
+    }
+
+    function drawBubbles() {
+      const svg = d3.select('#bubbles');
+      const W = svg.node().clientWidth, H = svg.node().clientHeight;
+      svg.selectAll('*').remove();
+      if (!bubblesData.length) {
+        svg.append('text').attr('x', W/2).attr('y', H/2).attr('text-anchor','middle')
+          .attr('fill','#8b94a7').text('Нет данных (CoinGecko rate-limit) — попробуй позже');
+        return;
+      }
+      const metric = document.getElementById('bubbleMetric').value;
+      const val = c => metric === 'change' ? Math.abs(c.change_24h || 0)
+                     : metric === 'volume' ? (c.volume || 0) : (c.market_cap || 0);
+      const maxV = d3.max(bubblesData, val) || 1;
+      const rScale = d3.scaleSqrt().domain([0, maxV]).range([8, Math.min(W, H) / 6]);
+      const color = c => (c.change_24h > 0) ? '#2ecc71' : (c.change_24h < 0) ? '#e74c3c' : '#7f8ea3';
+      const nodes = bubblesData.map(c => ({ ...c, r: rScale(val(c)), x: W/2 + (Math.random()-0.5)*W, y: H/2 + (Math.random()-0.5)*H }));
+
+      const node = svg.selectAll('g').data(nodes).join('g').style('cursor','pointer')
+        .on('click', (e, d) => { switchTab('feed'); document.getElementById('coinSearch').value = d.symbol; doSearch(); });
+      node.append('circle').attr('r', d => d.r)
+        .attr('fill', d => color(d)).attr('fill-opacity', 0.22)
+        .attr('stroke', d => color(d)).attr('stroke-width', 1.5);
+      node.append('text').text(d => d.symbol).attr('text-anchor','middle').attr('dy','-0.05em')
+        .attr('fill','#e6e9f0').attr('font-weight',600)
+        .attr('font-size', d => Math.max(8, Math.min(d.r/2.2, 18)))
+        .attr('opacity', d => d.r > 12 ? 1 : 0);
+      node.append('text').text(d => (d.change_24h>=0?'+':'') + (d.change_24h||0).toFixed(1) + '%')
+        .attr('text-anchor','middle').attr('dy','1.15em').attr('fill', d => color(d))
+        .attr('font-size', d => Math.max(8, Math.min(d.r/3.2, 13)))
+        .attr('opacity', d => d.r > 18 ? 1 : 0);
+
+      if (bubbleSim) bubbleSim.stop();
+      bubbleSim = d3.forceSimulation(nodes)
+        .force('center', d3.forceCenter(W/2, H/2))
+        .force('x', d3.forceX(W/2).strength(0.015))
+        .force('y', d3.forceY(H/2).strength(0.03))
+        .force('collide', d3.forceCollide().radius(d => d.r + 2).strength(0.9))
+        .on('tick', () => node.attr('transform', d => {
+          d.x = Math.max(d.r, Math.min(W - d.r, d.x));
+          d.y = Math.max(d.r, Math.min(H - d.r, d.y));
+          return `translate(${d.x},${d.y})`;
+        }));
+    }
+
+    document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+    document.getElementById('bubbleMetric').onchange = drawBubbles;
     document.getElementById('collectBtn').onclick = collect;
     document.getElementById('searchBtn').onclick = doSearch;
     document.getElementById('coinSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });

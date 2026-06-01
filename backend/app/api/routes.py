@@ -85,6 +85,12 @@ async def universe(limit: int = Query(400, ge=1, le=400)) -> dict:
     return {"count": len(coins), "coins": coins}
 
 
+@router.get("/markets")
+async def markets(limit: int = Query(100, ge=1, le=100)) -> dict:
+    """Топ-N монет с капой/объёмом/изменением/лого — для вкладки «Объём рынка»."""
+    return {"coins": await market_analytics.markets(limit=limit)}
+
+
 @router.get("/coins/search")
 async def coins_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50)) -> dict:
     """Поиск монеты по тикеру/имени среди топ-400 (для автодополнения)."""
