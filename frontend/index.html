@@ -44,6 +44,15 @@
     .Neutral { background: rgba(127,142,163,.15); color: var(--neutral); }
     .chip { font-size: 11px; padding: 2px 7px; border-radius: 5px;
       background: rgba(247,166,0,.12); color: var(--accent); }
+    .ev { font-size: 11px; padding: 2px 7px; border-radius: 5px; text-transform: uppercase;
+      letter-spacing: .03em; background: rgba(91,124,250,.15); color: #8aa0ff; }
+    .indices { display: flex; gap: 10px; }
+    .idx { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .idx .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .idx .val { font-size: 22px; font-weight: 700; margin: 2px 0; }
+    .idx .cls { font-size: 12px; }
+    .idx .bar { height: 5px; border-radius: 3px; background: var(--border); margin-top: 6px; overflow: hidden; }
+    .idx .bar > span { display: block; height: 100%; }
     .empty { color: var(--muted); padding: 40px 0; text-align: center; }
     .stat { font-size: 13px; color: var(--muted); margin-top: 10px; }
     .muted { color: var(--muted); }
@@ -69,6 +78,15 @@
         <option>BTC</option><option>ETH</option><option>SOL</option>
         <option>XRP</option><option>BNB</option><option>DOGE</option>
       </select>
+      <select id="eventFilter">
+        <option value="">Все события</option>
+        <option value="upgrade">Апгрейды</option>
+        <option value="collaboration">Коллаборации</option>
+        <option value="announcement">Анонсы</option>
+        <option value="listing">Листинги</option>
+        <option value="regulation">Регуляторика</option>
+        <option value="market">Рынок</option>
+      </select>
       <select id="hours">
         <option value="1">1 час</option>
         <option value="2" selected>2 часа</option>
@@ -87,7 +105,11 @@
       <div class="news" id="news"><div class="empty">Нажми «Собрать сейчас», чтобы запустить конвейер.</div></div>
     </section>
     <aside class="panel">
-      <h2>Сентимент по монетам</h2>
+      <h2>Индексы рынка</h2>
+      <div class="indices" id="indices"><span class="muted">загрузка…</span></div>
+      <h2 style="margin-top:18px">Капитализация и доминирование</h2>
+      <div class="cc" id="globalMetrics"><span class="muted">загрузка…</span></div>
+      <h2 style="margin-top:18px">Сентимент по монетам</h2>
       <canvas id="sentimentChart" height="220"></canvas>
       <div class="stat" id="collectStat"></div>
       <h2 style="margin-top:18px">Correlation Check</h2>
@@ -98,6 +120,9 @@
   <script>
     const API = location.origin;
     let chart;
+    let lastItems = [];
+    const EV_LABEL = { upgrade:'Апгрейд', collaboration:'Коллаб', announcement:'Анонс',
+      listing:'Листинг', regulation:'Регуляторика', market:'Рынок', other:'Прочее' };
 
     async function loadHealth() {
       try {
@@ -120,8 +145,9 @@
         const time = new Date(it.published_at).toLocaleString('ru-RU');
         const coins = it.coins.map(c => `<span class="chip">${c}</span>`).join(' ');
         const title = it.url ? `<a href="${it.url}" target="_blank">${it.title}</a>` : it.title;
+        const ev = `<span class="ev">${EV_LABEL[an.event_type] || an.event_type || 'other'}</span>`;
         return `<div class="card">
-          <div class="meta"><span>${it.source}</span><span>${time}</span>
+          <div class="meta"><span>${it.source}</span><span>${time}</span>${ev}
             <span>сентимент: ${an.sentiment >= 0 ? '+' : ''}${an.sentiment}</span>${coins}</div>
           <div class="title">${title}</div>
           <div class="summary">${an.ai_analysis || an.summary}</div>
@@ -172,6 +198,58 @@
         `<div class="row"><span>${k}</span><span>${v ?? '—'}</span></div>`).join('');
     }
 
+    function fmtUsd(n) {
+      if (n == null) return '—';
+      if (n >= 1e12) return '$' + (n/1e12).toFixed(2) + 'T';
+      if (n >= 1e9)  return '$' + (n/1e9).toFixed(1) + 'B';
+      if (n >= 1e6)  return '$' + (n/1e6).toFixed(1) + 'M';
+      return '$' + Math.round(n);
+    }
+
+    function gaugeColor(v) { return v < 25 ? '#e74c3c' : v < 45 ? '#e67e22' : v < 55 ? '#7f8ea3' : v < 75 ? '#2ecc71' : '#1e9e57'; }
+
+    function renderIndices(idx) {
+      const el = document.getElementById('indices');
+      const fg = idx.fear_greed, alt = idx.altseason;
+      const card = (lbl, val, sub, color) => `<div class="idx">
+        <div class="lbl">${lbl}</div>
+        <div class="val" style="color:${color}">${val}</div>
+        <div class="cls muted">${sub}</div>
+        <div class="bar"><span style="width:${val}%;background:${color}"></span></div></div>`;
+      let html = '';
+      html += fg ? card('Fear & Greed', fg.value, fg.classification, gaugeColor(fg.value))
+                 : card('Fear & Greed', '—', 'нет данных', '#7f8ea3');
+      const phaseRu = { altseason:'Альтсезон', bitcoin:'Биткоин-сезон', neutral:'Нейтрально' };
+      html += alt ? card('Altseason', alt.value, phaseRu[alt.phase] || alt.phase, gaugeColor(alt.value))
+                  : card('Altseason', '—', 'нет данных', '#7f8ea3');
+      el.innerHTML = html;
+    }
+
+    function renderGlobalMetrics(g) {
+      const el = document.getElementById('globalMetrics');
+      if (!g || !g.TOTAL) { el.innerHTML = '<span class="muted">нет данных</span>'; return; }
+      const d = g.dominance || {};
+      const rows = [
+        ['TOTAL (весь рынок)', fmtUsd(g.TOTAL)],
+        ['TOTAL2 (без BTC)', fmtUsd(g.TOTAL2)],
+        ['OTHERS (вне топ-10)', fmtUsd(g.OTHERS)],
+        ['BTC.D', d.BTC != null ? d.BTC + '%' : '—'],
+        ['ETH.D', d.ETH != null ? d.ETH + '%' : '—'],
+        ['OTHERS.D', d.OTHERS != null ? d.OTHERS + '%' : '—'],
+      ];
+      el.innerHTML = rows.map(([k,v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
+    }
+
+    async function loadIndices() {
+      try {
+        const [idx, g] = await Promise.all([
+          fetch(`${API}/api/indices`).then(r => r.json()),
+          fetch(`${API}/api/global`).then(r => r.json()),
+        ]);
+        renderIndices(idx); renderGlobalMetrics(g);
+      } catch {}
+    }
+
     async function loadMarket() {
       try { renderMarket((await (await fetch(`${API}/api/market`)).json()).prices || {}); }
       catch {}
@@ -188,19 +266,32 @@
         renderChart(r.sentiment_by_coin);
         if (r.market && r.market.prices) renderMarket(r.market.prices);
         if (r.items.length) renderCorrelation(r.items[0].analysis.correlation_check);
+        loadIndices();
         await loadFeed();
       } finally { btn.disabled = false; btn.textContent = 'Собрать сейчас'; }
+    }
+
+    function renderFiltered() {
+      const ev = document.getElementById('eventFilter').value;
+      renderFeed(ev ? lastItems.filter(a => a.analysis.event_type === ev) : lastItems);
     }
 
     async function loadFeed() {
       const coin = document.getElementById('coinFilter').value;
       const url = `${API}/api/feed${coin ? `?coin=${coin}` : ''}`;
-      renderFeed(await (await fetch(url)).json());
+      lastItems = await (await fetch(url)).json();
+      renderFiltered();
+      if (lastItems.length) renderCorrelation(lastItems[0].analysis.correlation_check);
+    }
+
+    async function loadSentiment() {
+      try { renderChart(await (await fetch(`${API}/api/sentiment`)).json()); } catch {}
     }
 
     document.getElementById('collectBtn').onclick = collect;
     document.getElementById('coinFilter').onchange = loadFeed;
-    loadHealth(); loadFeed(); loadMarket();
+    document.getElementById('eventFilter').onchange = renderFiltered;
+    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment();
   </script>
 </body>
 </html>

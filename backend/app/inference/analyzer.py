@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from ..config import settings
-from ..models import Analysis, Bias, CorrelationCheck, DirectionalBias, NewsItem
+from ..models import Analysis, Bias, CorrelationCheck, DirectionalBias, EventType, NewsItem
 
 # --- Схема инструмента: жёсткий контракт вывода (раздел 3 спеки) ---------------
 
@@ -21,6 +21,11 @@ ANALYSIS_TOOL = {
         "properties": {
             "summary": {"type": "string", "description": "Executive Summary: суть события в 1-2 фразах"},
             "ai_analysis": {"type": "string", "description": "Вектор влияния и прогноз на торговую сессию (Daily Outlook)"},
+            "event_type": {
+                "type": "string",
+                "enum": ["upgrade", "collaboration", "announcement", "listing", "regulation", "market", "other"],
+                "description": "Тип события: upgrade (апгрейд/хардфорк), collaboration (партнёрство), announcement (офиц. анонс), listing (листинг), regulation (регуляторика), market (рынок/макро), other",
+            },
             "sentiment": {"type": "number", "description": "Сентимент от -1 (негатив) до +1 (позитив)"},
             "directional_bias": {
                 "type": "object",
@@ -52,12 +57,20 @@ SYSTEM_PROMPT = (
 )
 
 
+def _safe_event_type(value) -> EventType:
+    try:
+        return EventType(value)
+    except (ValueError, TypeError):
+        return EventType.other
+
+
 def _to_analysis(data: dict) -> Analysis:
     db = data.get("directional_bias", {})
     cc = data.get("correlation_check", {})
     return Analysis(
         summary=data.get("summary", ""),
         ai_analysis=data.get("ai_analysis", ""),
+        event_type=_safe_event_type(data.get("event_type", "other")),
         sentiment=float(data.get("sentiment", 0.0)),
         directional_bias=DirectionalBias(
             BTC=Bias(db.get("BTC", "Neutral")),
@@ -77,6 +90,23 @@ def _to_analysis(data: dict) -> Analysis:
 
 _POS = ["inflow", "приток", "record", "рекорд", "partnership", "партнёрств", "upgrade", "апгрейд", "cuts fees", "bullish", "adoption"]
 _NEG = ["outage", "сбой", "hack", "взлом", "hotter than expected", "выше прогноза", "sell", "продаж", "dump", "bearish", "под давлением", "lawsuit", "иск"]
+
+# ключевые слова для определения типа события в стабе
+_EVENT_KW = {
+    EventType.upgrade: ["upgrade", "апгрейд", "hardfork", "хардфорк", "mainnet", "migration", "миграц", "fork", "dencun", "halving", "халвинг"],
+    EventType.collaboration: ["partnership", "партнёрств", "partner", "collaborat", "коллаборац", "integration", "интеграц", "joins"],
+    EventType.listing: ["listing", "листинг", "delisting", "lists ", "now trading", "запуск торгов"],
+    EventType.regulation: ["lawsuit", "иск", "sec", "regulat", "регулятор", "ban", "запрет", "law", "закон", "court", "суд"],
+    EventType.announcement: ["announce", "анонс", "unveils", "представил", "launches", "запускает", "reveals"],
+    EventType.market: ["price", "цена", "etf", "inflow", "приток", "outflow", "dxy", "cpi", "fed", "фрс", "funding", "rally", "dump", "ликвидац", "liquidation", "whale", "кит"],
+}
+
+
+def _stub_event_type(text: str) -> EventType:
+    for etype, kws in _EVENT_KW.items():
+        if any(k in text for k in kws):
+            return etype
+    return EventType.other
 
 
 def _stub_analysis(item: NewsItem) -> Analysis:
@@ -98,6 +128,7 @@ def _stub_analysis(item: NewsItem) -> Analysis:
         summary=item.title,
         ai_analysis=f"[stub] Оценка по ключевым словам: сентимент={sentiment:+.2f}. "
         f"Затронутые активы: {', '.join(item.coins) or 'нет'}.",
+        event_type=_stub_event_type(text),
         sentiment=sentiment,
         directional_bias=DirectionalBias(BTC=b("BTC"), ETH=b("ETH"), SOL=b("SOL")),
         correlation_check=CorrelationCheck(

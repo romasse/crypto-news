@@ -51,6 +51,25 @@ async def market() -> dict:
     return await market_provider.snapshot()
 
 
+@router.get("/global")
+async def global_metrics() -> dict:
+    """Капитализации (TOTAL/TOTAL2/OTHERS) и доминирование (BTC.D/ETH.D/OTHERS.D)."""
+    return await market_analytics.global_metrics()
+
+
+@router.get("/indices")
+async def indices() -> dict:
+    """Индексы настроений: Fear & Greed и Altseason."""
+    return await market_analytics.indices()
+
+
+@router.get("/universe")
+async def universe(limit: int = Query(400, ge=1, le=400)) -> dict:
+    """Вселенная активов — топ-N по капитализации (жёсткий лимит листинга)."""
+    coins = await market_analytics.universe(limit=limit)
+    return {"count": len(coins), "coins": coins}
+
+
 @router.get("/sentiment")
 async def sentiment(hours: float = Query(2.0, ge=0.25, le=48)) -> dict:
     """Средний сентимент по монетам за окно (для графиков)."""

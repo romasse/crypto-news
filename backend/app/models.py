@@ -14,6 +14,18 @@ class Bias(str, Enum):
     bearish = "Bearish"
 
 
+class EventType(str, Enum):
+    """Тип события (раздел 5 ТЗ): апгрейды, коллаборации, анонсы и пр."""
+
+    upgrade = "upgrade"            # технологическое обновление, хардфорк, миграция
+    collaboration = "collaboration"  # партнёрство, совместная инициатива
+    announcement = "announcement"  # официальный анонс команды/фонда
+    listing = "listing"            # листинг/делистинг, новый рынок
+    regulation = "regulation"      # регуляторика, иски, законы
+    market = "market"              # рыночное движение, макро, ликвидность
+    other = "other"
+
+
 class NewsItem(BaseModel):
     """Нормализованная единица данных — общая для всех источников.
 
@@ -52,6 +64,7 @@ class Analysis(BaseModel):
 
     summary: str = Field(..., description="Executive Summary — суть события")
     ai_analysis: str = Field(..., description="Вектор влияния + Daily Outlook")
+    event_type: EventType = Field(EventType.other, description="Тип события")
     sentiment: float = Field(
         0.0, ge=-1.0, le=1.0, description="Сентимент от -1 (негатив) до +1 (позитив)"
     )
