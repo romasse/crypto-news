@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 
 from ..aggregator.service import aggregator
 from ..config import settings
+from ..market.analytics import market_analytics
 from ..market.provider import market_provider
 from ..models import AnalyzedItem, CollectResult
 from ..store.db import store
