@@ -3,6 +3,9 @@
 Ключ бесплатный, получить за 1 мин на alphavantage.co.
 Без ключа возвращает пустой список (не ломает сайт).
 Данные кэшируются на 1 час — IPO-расписание меняется редко.
+
+Alpha Vantage при ошибке/лимите возвращает JSON вместо CSV
+({"Information": "..."} или {"Note": "..."}). Определяем это по первому символу.
 """
 from __future__ import annotations
 
@@ -40,36 +43,55 @@ class IPOProvider:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.get(url, params=params)
                 r.raise_for_status()
-            reader = csv.DictReader(io.StringIO(r.text))
+                text = r.text
+
+            # убираем BOM и пробелы
+            text = text.strip().lstrip('﻿')
+
+            # Alpha Vantage при rate-limit/ошибке возвращает JSON вместо CSV
+            if text.startswith('{') or text.startswith('['):
+                return []
+
+            reader = csv.DictReader(io.StringIO(text))
+            # нормализуем имена колонок — убираем BOM и пробелы
+            if reader.fieldnames:
+                reader.fieldnames = [f.strip().lstrip('﻿') for f in reader.fieldnames]
+
             result = []
             for row in reader:
+                sym = _str(row, "symbol", "Symbol")
+                name = _str(row, "name", "Name")
+                if not sym and not name:
+                    continue  # пропускаем пустые строки
                 result.append({
-                    "symbol": row.get("symbol", "").strip(),
-                    "name": row.get("name", "").strip(),
-                    "ipo_date": row.get("ipoDate", "").strip(),
-                    "price_low": _float(row.get("priceRangeLow")),
-                    "price_high": _float(row.get("priceRangeHigh")),
-                    "currency": row.get("currency", "USD").strip(),
-                    "exchange": row.get("exchange", "").strip(),
-                    "shares": _int(row.get("shares")),
+                    "symbol": sym,
+                    "name": name,
+                    "ipo_date": _str(row, "ipoDate", "IPO Date", "ipo_date"),
+                    "price_low": _float(_str(row, "priceRangeLow", "Price Range Low")),
+                    "price_high": _float(_str(row, "priceRangeHigh", "Price Range High")),
+                    "currency": _str(row, "currency", "Currency") or "USD",
+                    "exchange": _str(row, "exchange", "Exchange"),
+                    "shares": None,
                 })
-            # сортируем по дате, ближайшие сначала
+
             result.sort(key=lambda x: x["ipo_date"] or "9999")
             return result
         except Exception:
             return []
 
 
-def _float(v) -> float | None:
-    try:
-        return float(v) if v and str(v).strip() else None
-    except (ValueError, TypeError):
-        return None
+def _str(row: dict, *keys: str) -> str:
+    """Возвращает первое непустое значение по списку ключей."""
+    for k in keys:
+        v = row.get(k)
+        if v is not None:
+            return str(v).strip()
+    return ""
 
 
-def _int(v) -> int | None:
+def _float(v: str) -> float | None:
     try:
-        return int(v) if v and str(v).strip() else None
+        return float(v) if v and v.strip() else None
     except (ValueError, TypeError):
         return None
 
