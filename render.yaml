@@ -22,6 +22,10 @@ services:
       # Опционально: токен CryptoPanic (без него источник тихо пропускается).
       - key: CRYPTOPANIC_TOKEN
         sync: false
+      # Рекомендуется: бесплатный Demo-ключ CoinGecko (coingecko.com/en/api)
+      # сильно поднимает лимиты и устраняет 429 на странице «Объём рынка».
+      - key: COINGECKO_API_KEY
+        sync: false
       # Опционально для постоянной БД: примонтируй Render Disk и укажи путь, напр.
       #   CRYPTO_NEWS_DB=/var/data/crypto_news.db
       # Без диска SQLite живёт в эфемерной ФС и обнуляется при редеплое/рестарте.

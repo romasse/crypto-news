@@ -25,7 +25,7 @@ class CoinGeckoClient:
         self.base = _PRO if self.pro else _PUBLIC
         self._lock = asyncio.Lock()
         # минимальный интервал между запросами: с ключом можно чаще
-        self._min_interval = 0.3 if self.key else 1.3
+        self._min_interval = 0.5 if self.key else 2.5
         self._last = 0.0
 
     def _headers(self) -> dict:

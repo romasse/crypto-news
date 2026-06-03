@@ -635,7 +635,15 @@
     document.getElementById('searchBtn').onclick = doSearch;
     document.getElementById('coinSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
     document.getElementById('eventFilter').onchange = renderFiltered;
-    loadHealth(); loadFeed(); loadMarket(); loadIndices(); loadSentiment(); loadCoinList(); renderWatchlist();
+    // Загружаем последовательно, чтобы не создавать пачку одновременных CoinGecko-запросов
+    // (без ключа публичный rate-limit ~30 req/min, параллельность убивает кэш-логику)
+    loadHealth();
+    renderWatchlist();
+    loadFeed();
+    loadMarket();
+    setTimeout(loadIndices, 800);
+    setTimeout(loadSentiment, 1200);
+    setTimeout(loadCoinList, 2000);
   </script>
 </body>
 </html>

@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Optional
 
@@ -49,6 +50,10 @@ class MarketAnalytics:
         self._last_fg: Optional[dict] = None
         self._last_alt: Optional[dict] = None
         self._chart_cache: dict = {}  # {id:days -> (ts, points)}
+        # замок против параллельных промахов кэша: несколько запросов не должны
+        # одновременно идти к CoinGecko за одними данными
+        self._markets100_lock = asyncio.Lock()
+        self._universe_lock = asyncio.Lock()
 
     async def _get_json(self, url: str, params: dict | None = None):
         async with httpx.AsyncClient(timeout=20) as client:
@@ -61,17 +66,23 @@ class MarketAnalytics:
             cached = self._markets100.get()
             if cached is not None:
                 return cached
-        data = await coingecko.get(
-            "/coins/markets",
-            {
-                "vs_currency": "usd",
-                "order": "market_cap_desc",
-                "per_page": 100,
-                "page": 1,
-                "price_change_percentage": "1h,24h,7d,30d,90d,1y",
-            },
-        )
-        return self._markets100.set(data)
+        async with self._markets100_lock:
+            # повторная проверка: пока ждали замок — другой запрос мог уже заполнить кэш
+            if not force:
+                cached = self._markets100.get()
+                if cached is not None:
+                    return cached
+            data = await coingecko.get(
+                "/coins/markets",
+                {
+                    "vs_currency": "usd",
+                    "order": "market_cap_desc",
+                    "per_page": 100,
+                    "page": 1,
+                    "price_change_percentage": "1h,24h,7d,30d,90d,1y",
+                },
+            )
+            return self._markets100.set(data)
 
     # --- Капитализации и доминирование (раздел 3-4 спеки) ----------------------
 
@@ -193,30 +204,34 @@ class MarketAnalytics:
         cached = self._universe.get()
         if cached is not None:
             return cached[:limit]
-        coins: list[dict] = []
-        try:
-            for page in (1, 2):  # 2 страницы по 200 = топ-400
-                data = await coingecko.get(
-                    "/coins/markets",
-                    {
-                        "vs_currency": "usd",
-                        "order": "market_cap_desc",
-                        "per_page": 200,
-                        "page": page,
-                    },
-                )
-                for c in data:
-                    coins.append(
+        async with self._universe_lock:
+            cached = self._universe.get()
+            if cached is not None:
+                return cached[:limit]
+            coins: list[dict] = []
+            try:
+                for page in (1, 2):  # 2 страницы по 200 = топ-400
+                    data = await coingecko.get(
+                        "/coins/markets",
                         {
-                            "rank": c.get("market_cap_rank"),
-                            "symbol": (c.get("symbol") or "").upper(),
-                            "id": c.get("id"),
-                            "name": c.get("name"),
-                        }
+                            "vs_currency": "usd",
+                            "order": "market_cap_desc",
+                            "per_page": 200,
+                            "page": page,
+                        },
                     )
-        except Exception:
-            return coins[:limit]
-        return self._universe.set(coins)[:limit]
+                    for c in data:
+                        coins.append(
+                            {
+                                "rank": c.get("market_cap_rank"),
+                                "symbol": (c.get("symbol") or "").upper(),
+                                "id": c.get("id"),
+                                "name": c.get("name"),
+                            }
+                        )
+            except Exception:
+                return coins[:limit]
+            return self._universe.set(coins)[:limit]
 
     async def markets(self, limit: int = 100) -> list[dict]:
         """Данные для пузырей «Объём рынка»: капа/объём/изменение/лого по топ-N."""
