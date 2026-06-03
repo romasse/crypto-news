@@ -126,7 +126,7 @@ def _stub_analysis(item: NewsItem) -> Analysis:
 
     return Analysis(
         summary=item.title,
-        ai_analysis=f"[stub] Оценка по ключевым словам: сентимент={sentiment:+.2f}. "
+        ai_analysis=f"Оценка по ключевым словам: сентимент={sentiment:+.2f}. "
         f"Затронутые активы: {', '.join(item.coins) or 'нет'}.",
         event_type=_stub_event_type(text),
         sentiment=sentiment,
