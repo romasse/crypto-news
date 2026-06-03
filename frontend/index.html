@@ -650,7 +650,14 @@
           return;
         }
         if (!d.items || !d.items.length) {
-          el.innerHTML = '<div class="empty" style="padding:60px 0;text-align:center;color:var(--muted)">Нет данных по IPO</div>';
+          el.innerHTML = `<div class="empty" style="padding:60px 20px;text-align:center">
+            <div style="font-size:32px;margin-bottom:12px">⏳</div>
+            <div style="color:var(--text);font-size:15px;margin-bottom:8px">Лимит Alpha Vantage исчерпан на сегодня</div>
+            <div style="color:var(--muted);max-width:420px;margin:0 auto;font-size:13px">
+              Бесплатный план даёт 25 запросов/день. Данные обновятся завтра автоматически,
+              либо получи платный ключ на <a href="https://www.alphavantage.co/premium/" target="_blank" style="color:var(--accent)">alphavantage.co/premium</a>
+            </div>
+          </div>`;
           return;
         }
         const fmtShares = v => v ? (v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v.toLocaleString()) : '—';

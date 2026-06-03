@@ -17,7 +17,7 @@ import httpx
 
 from ..config import settings
 
-_CACHE_TTL = 3600.0  # 1 час
+_CACHE_TTL = 21600.0  # 6 часов — экономим 25 вызовов/день Alpha Vantage
 
 
 class IPOProvider:
@@ -60,7 +60,12 @@ class IPOProvider:
                 sym = _str(row, "symbol", "Symbol")
                 name = _str(row, "name", "Name")
                 if not sym and not name:
-                    continue  # пропускаем пустые строки
+                    continue  # пустые строки
+                # Alpha Vantage при rate-limit возвращает слово "Information"
+                # побуквенно как CSV-строку: I,n,f,o,r,m,a,...
+                # Детектируем: все ключевые поля — одиночные символы
+                if len(sym) <= 1 and len(name) <= 1:
+                    return []  # rate-limit, не реальные данные
                 result.append({
                     "symbol": sym,
                     "name": name,
