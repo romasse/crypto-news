@@ -210,6 +210,11 @@
       <div class="indices" id="indices"><span class="muted">загрузка…</span></div>
       <h2 style="margin-top:18px">Капитализация и доминирование</h2>
       <div class="cc" id="globalMetrics"><span class="muted">загрузка…</span></div>
+      <h2 style="margin-top:18px">Распределение рыночной доли</h2>
+      <div style="position:relative;width:180px;margin:0 auto;">
+        <canvas id="dominanceChart" width="180" height="180"></canvas>
+        <div id="dominanceLegend" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;font-size:12px;"></div>
+      </div>
       <h2 style="margin-top:18px">Сентимент по монетам</h2>
       <canvas id="sentimentChart" height="220"></canvas>
       <div class="stat" id="collectStat"></div>
@@ -385,6 +390,36 @@
       el.innerHTML = rows.map(([k,v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
     }
 
+    let dominanceChart = null;
+    function renderDominanceChart(g) {
+      if (!g || !g.dominance) return;
+      const d = g.dominance;
+      const btc = d.BTC ?? 0, eth = d.ETH ?? 0, others = Math.max(0, 100 - btc - eth);
+      const labels = ['BTC', 'ETH', 'Остальные'];
+      const data = [btc, eth, parseFloat(others.toFixed(2))];
+      const colors = ['#f7a600', '#627eea', '#8b94a7'];
+      if (dominanceChart) dominanceChart.destroy();
+      dominanceChart = new Chart(document.getElementById('dominanceChart'), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 1, borderColor: '#141925' }] },
+        options: {
+          cutout: '68%',
+          animation: { duration: 600 },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed.toFixed(2)}%` } }
+          }
+        }
+      });
+      document.getElementById('dominanceLegend').innerHTML = labels.map((l, i) =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span style="display:flex;align-items:center;gap:5px">
+            <span style="width:10px;height:10px;border-radius:50%;background:${colors[i]};display:inline-block"></span>${l}
+          </span>
+          <span style="font-weight:600;color:${colors[i]}">${data[i].toFixed(2)}%</span>
+        </div>`).join('');
+    }
+
     function fgGaugeSVG(val, label) {
       const r = 38, cx = 50, cy = 50, len = Math.PI * r;
       const a = Math.PI * (1 - val / 100);
@@ -438,7 +473,7 @@
           fetch(`${API}/api/indices`).then(r => r.json()),
           fetch(`${API}/api/global`).then(r => r.json()),
         ]);
-        renderIndices(idx); renderGlobalMetrics(g); renderStatsbar(idx, g);
+        renderIndices(idx); renderGlobalMetrics(g); renderStatsbar(idx, g); renderDominanceChart(g);
       } catch {}
     }
 
