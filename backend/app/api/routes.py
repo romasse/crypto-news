@@ -113,6 +113,29 @@ async def coin(symbol: str = Query(..., min_length=1)) -> dict:
     return quote or {"symbol": symbol.upper(), "price": None}
 
 
+@router.get("/ipo/raw")
+async def ipo_raw() -> dict:
+    """Debug: сырой ответ Alpha Vantage (первые 500 символов)."""
+    import httpx
+    key = settings.alpha_vantage_key
+    if not key:
+        return {"error": "no key"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                "https://www.alphavantage.co/query",
+                params={"function": "IPO_CALENDAR", "apikey": key}
+            )
+        return {
+            "status": r.status_code,
+            "content_type": r.headers.get("content-type", ""),
+            "text_first500": r.text[:500],
+            "bytes_hex_first50": r.content[:50].hex(),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/ipo")
 async def ipo() -> dict:
     """Предстоящие IPO (США) из Alpha Vantage IPO Calendar."""
