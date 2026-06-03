@@ -156,6 +156,20 @@
     .alt-bar-marker { position: absolute; top: -5px; width: 2px; height: 17px;
       background: white; border-radius: 1px; transform: translateX(-50%); }
     .alt-bar-val { text-align: center; font-size: 11px; color: var(--muted); }
+    /* IPO Calendar */
+    #ipoView { padding: 16px 20px; }
+    .ipo-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ipo-table th { text-align: left; padding: 10px 12px; color: var(--muted);
+      font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border); background: #0f131c;
+      position: sticky; top: 0; }
+    .ipo-table td { padding: 10px 12px; border-bottom: 1px solid rgba(35,42,58,.4); }
+    .ipo-table tbody tr:hover { background: rgba(247,166,0,.05); }
+    .ipo-date { color: var(--accent); font-weight: 600; white-space: nowrap; }
+    .ipo-sym { font-weight: 700; }
+    .ipo-exch { font-size: 11px; color: var(--muted); }
+    .ipo-price { color: var(--bull); }
+    .ipo-shares { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -165,6 +179,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="feed">Лента</button>
       <button class="tab" data-tab="bubbles">Объём рынка</button>
+      <button class="tab" data-tab="ipo">IPO</button>
     </nav>
     <div class="controls" id="feedControls">
       <input id="coinSearch" list="coinList" placeholder="Монета: BTC, Solana…" autocomplete="off" />
@@ -226,6 +241,10 @@
 
   <section id="bubblesView" style="display:none">
     <div id="marketTable"></div>
+  </section>
+
+  <section id="ipoView" style="display:none">
+    <div id="ipoContent"><div class="empty" style="padding:60px 0;text-align:center;color:var(--muted)">Загрузка…</div></div>
   </section>
 
   <div id="coinModal" class="modal" style="display:none">
@@ -599,17 +618,63 @@
 
     // --- Вкладка «Объём рынка»: таблица топ-100 ---
     let bubblesData = [], bubblesLoaded = false;
+    let ipoLoaded = false;
     let tableSort = { key: 'market_cap', dir: -1 };
     let cmChart = null, cmCoin = null, _globalCache = null;
 
     function switchTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-      const market = name === 'bubbles';
-      document.getElementById('feedView').style.display = market ? 'none' : '';
-      document.getElementById('bubblesView').style.display = market ? '' : 'none';
-      document.getElementById('feedControls').style.display = market ? 'none' : '';
-      if (market && !bubblesLoaded) { bubblesLoaded = true; loadMarketTable(); }
-      else if (market) renderTable();
+      document.getElementById('feedView').style.display = name === 'feed' ? '' : 'none';
+      document.getElementById('bubblesView').style.display = name === 'bubbles' ? '' : 'none';
+      document.getElementById('ipoView').style.display = name === 'ipo' ? '' : 'none';
+      document.getElementById('feedControls').style.display = name === 'feed' ? '' : 'none';
+      if (name === 'bubbles' && !bubblesLoaded) { bubblesLoaded = true; loadMarketTable(); }
+      else if (name === 'bubbles') renderTable();
+      if (name === 'ipo' && !ipoLoaded) { ipoLoaded = true; loadIPO(); }
+    }
+
+    // --- IPO Calendar ---
+    async function loadIPO() {
+      const el = document.getElementById('ipoContent');
+      try {
+        const d = await (await fetch(`${API}/api/ipo`)).json();
+        if (!d.configured) {
+          el.innerHTML = `<div class="empty" style="padding:60px 20px;text-align:center">
+            <div style="font-size:32px;margin-bottom:12px">📋</div>
+            <div style="color:var(--text);font-size:16px;margin-bottom:8px">Нужен бесплатный API ключ</div>
+            <div style="color:var(--muted);max-width:400px;margin:0 auto">
+              Получи ключ на <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color:var(--accent)">alphavantage.co</a>
+              и добавь в Render Dashboard как <code style="background:var(--panel);padding:2px 6px;border-radius:4px">ALPHA_VANTAGE_KEY</code>
+            </div>
+          </div>`;
+          return;
+        }
+        if (!d.items || !d.items.length) {
+          el.innerHTML = '<div class="empty" style="padding:60px 0;text-align:center;color:var(--muted)">Нет данных по IPO</div>';
+          return;
+        }
+        const fmtShares = v => v ? (v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v.toLocaleString()) : '—';
+        const fmtPrice = (lo, hi) => {
+          if (!lo && !hi) return '—';
+          if (lo && hi) return `$${lo}–$${hi}`;
+          return '$' + (lo || hi);
+        };
+        const rows = d.items.map(i => `<tr>
+          <td class="ipo-date">${i.ipo_date || '—'}</td>
+          <td><div class="ipo-sym">${i.symbol || '—'}</div><div style="font-size:11px;color:var(--muted)">${i.name || ''}</div></td>
+          <td class="ipo-exch">${i.exchange || '—'}</td>
+          <td class="ipo-price">${fmtPrice(i.price_low, i.price_high)}</td>
+          <td class="ipo-shares">${fmtShares(i.shares)}</td>
+        </tr>`).join('');
+        el.innerHTML = `<table class="ipo-table">
+          <thead><tr>
+            <th>Дата</th><th>Компания</th><th>Биржа</th><th>Цена</th><th>Акций</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      } catch {
+        el.innerHTML = '<div class="empty" style="padding:60px 0;text-align:center;color:var(--muted)">Ошибка загрузки IPO-данных</div>';
+      }
     }
 
     async function loadMarketTable() {

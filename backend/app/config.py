@@ -33,6 +33,9 @@ class Settings:
     coingecko_api_key: str | None = os.getenv("COINGECKO_API_KEY") or None
     coingecko_pro: bool = os.getenv("COINGECKO_PRO", "").lower() in ("1", "true", "yes")
 
+    # Alpha Vantage: бесплатный ключ для IPO-календаря (alphavantage.co)
+    alpha_vantage_key: str | None = os.getenv("ALPHA_VANTAGE_KEY") or None
+
     # Хранилище
     db_path: str = os.getenv("CRYPTO_NEWS_DB", str(BASE_DIR / "data" / "crypto_news.db"))
 

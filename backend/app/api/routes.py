@@ -113,6 +113,14 @@ async def coin(symbol: str = Query(..., min_length=1)) -> dict:
     return quote or {"symbol": symbol.upper(), "price": None}
 
 
+@router.get("/ipo")
+async def ipo() -> dict:
+    """Предстоящие IPO (США) из Alpha Vantage IPO Calendar."""
+    from ..market.ipo import ipo_provider
+    items = await ipo_provider.upcoming()
+    return {"configured": bool(settings.alpha_vantage_key), "items": items}
+
+
 @router.get("/sentiment")
 async def sentiment(hours: float = Query(2.0, ge=0.25, le=48)) -> dict:
     """Средний сентимент по монетам за окно (для графиков)."""
