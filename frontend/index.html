@@ -675,6 +675,14 @@
     document.getElementById('eventFilter').onchange = renderFiltered;
     // Загружаем последовательно, чтобы не создавать пачку одновременных CoinGecko-запросов
     // (без ключа публичный rate-limit ~30 req/min, параллельность убивает кэш-логику)
+    async function prefetchLogos() {
+      try {
+        const d = await (await fetch(`${API}/api/markets?limit=100`)).json();
+        (d.coins || []).forEach(c => { if (c.image) coinLogos[c.symbol] = c.image; });
+        if (Object.keys(lastPrices).length) renderMarket(lastPrices);
+      } catch {}
+    }
+
     loadHealth();
     renderWatchlist();
     loadFeed();
@@ -682,6 +690,7 @@
     setTimeout(loadIndices, 800);
     setTimeout(loadSentiment, 1200);
     setTimeout(loadCoinList, 2000);
+    setTimeout(prefetchLogos, 3000);
   </script>
 </body>
 </html>
