@@ -181,9 +181,9 @@
   </header>
 
   <div class="statsbar" id="statsbar">
-    <div class="stat-chip"><span class="ic">📊</span><div><div class="sc-lbl">Капитализация</div><div class="sc-val" id="sb-mcap">…</div></div></div>
-    <div class="stat-chip"><span class="ic">😰</span><div><div class="sc-lbl">Страх / Жадность</div><div class="sc-val" id="sb-fg">…</div></div></div>
-    <div class="stat-chip"><span class="ic">🌊</span><div><div class="sc-lbl">Альт-сезон</div><div class="sc-val" id="sb-alt">…</div></div></div>
+    <div class="stat-chip"><div><div class="sc-lbl">Капитализация</div><div class="sc-val" id="sb-mcap">…</div></div></div>
+    <div class="stat-chip"><div><div class="sc-lbl">Страх / Жадность</div><div class="sc-val" id="sb-fg">…</div></div></div>
+    <div class="stat-chip"><div><div class="sc-lbl">Альт-сезон</div><div class="sc-val" id="sb-alt">…</div></div></div>
   </div>
 
   <div id="feedView">
@@ -303,7 +303,11 @@
       });
     }
 
+    let lastPrices = {};
+    const coinLogos = {};
+
     function renderMarket(prices) {
+      lastPrices = prices;
       const order = ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA'];
       const el = document.getElementById('market');
       const keys = order.filter(k => prices[k]);
@@ -311,8 +315,9 @@
       el.innerHTML = keys.map(k => {
         const p = prices[k], ch = p.change_24h ?? 0;
         const cls = ch >= 0 ? 'up' : 'down';
-        const price = p.price != null ? '$' + Number(p.price).toLocaleString('en-US') : '—';
-        return `<div class="ticker"><span class="sym">${k}</span><span>${price}</span>
+        const price = p.price != null ? '$' + Number(p.price).toLocaleString('en-US', {maximumFractionDigits: 6}) : '—';
+        const logo = coinLogos[k] ? `<img src="${coinLogos[k]}" style="width:18px;height:18px;border-radius:50%;vertical-align:middle;margin-right:5px">` : '';
+        return `<div class="ticker">${logo}<span class="sym">${k}</span><span>${price}</span>
           <span class="${cls}">${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%</span></div>`;
       }).join('');
     }
@@ -374,19 +379,15 @@
       const fg = idx && idx.fear_greed;
       const alt = idx && idx.altseason;
       // иконка и цвет Fear & Greed
-      const fgIcon = !fg ? '😶' : fg.value <= 25 ? '😱' : fg.value <= 45 ? '😰' : fg.value <= 55 ? '😐' : fg.value <= 75 ? '😊' : '🤑';
       const fgColor = !fg ? '' : gaugeColor(fg.value);
       document.getElementById('sb-fg').innerHTML = fg
         ? `<span style="color:${fgColor}">${fg.value} <span style="font-weight:400;font-size:11px">${fg.classification}</span></span>`
         : '<span style="color:var(--muted)">—</span>';
-      document.querySelector('.stat-chip:nth-child(2) .ic').textContent = fgIcon;
       // Альт-сезон
-      const altIcon = !alt ? '🌊' : alt.phase === 'altseason' ? '🚀' : alt.phase === 'bitcoin' ? '₿' : '🌊';
       const phaseRu = { altseason:'Альтсезон', bitcoin:'BTC-сезон', neutral:'Нейтрально' };
       document.getElementById('sb-alt').innerHTML = alt
         ? `<span style="color:${gaugeColor(alt.value)}">${alt.value} <span style="font-weight:400;font-size:11px">${phaseRu[alt.phase] || alt.phase}</span></span>`
         : '<span style="color:var(--muted)">—</span>';
-      document.querySelector('.stat-chip:nth-child(3) .ic').textContent = altIcon;
       // Капитализация
       document.getElementById('sb-mcap').textContent = g && g.TOTAL ? fmtUsd(g.TOTAL) : '—';
     }
@@ -540,6 +541,8 @@
       try {
         const d = await (await fetch(`${API}/api/markets?limit=100`)).json();
         bubblesData = (d.coins || []).filter(c => c.market_cap);
+        bubblesData.forEach(c => { if (c.image) coinLogos[c.symbol] = c.image; });
+        if (Object.keys(lastPrices).length) renderMarket(lastPrices);
       } catch { bubblesData = []; }
       renderTable();
     }
