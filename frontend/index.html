@@ -138,6 +138,14 @@
     .cc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
     .cc .row { display: flex; justify-content: space-between; }
     .cc .row span:first-child { color: var(--muted); }
+    .statsbar { display: flex; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--border);
+      overflow-x: auto; background: rgba(11,14,20,0.3); flex-wrap: nowrap; }
+    .stat-chip { display: flex; align-items: center; gap: 7px; font-size: 13px;
+      background: rgba(20,25,37,0.7); border: 1px solid var(--border); border-radius: 10px;
+      padding: 6px 13px; white-space: nowrap; }
+    .stat-chip .ic { font-size: 15px; }
+    .stat-chip .sc-lbl { color: var(--muted); font-size: 11px; }
+    .stat-chip .sc-val { font-weight: 700; }
   </style>
 </head>
 <body>
@@ -171,6 +179,12 @@
       <button class="primary" id="collectBtn">Собрать сейчас</button>
     </div>
   </header>
+
+  <div class="statsbar" id="statsbar">
+    <div class="stat-chip"><span class="ic">📊</span><div><div class="sc-lbl">Капитализация</div><div class="sc-val" id="sb-mcap">…</div></div></div>
+    <div class="stat-chip"><span class="ic">😰</span><div><div class="sc-lbl">Страх / Жадность</div><div class="sc-val" id="sb-fg">…</div></div></div>
+    <div class="stat-chip"><span class="ic">🌊</span><div><div class="sc-lbl">Альт-сезон</div><div class="sc-val" id="sb-alt">…</div></div></div>
+  </div>
 
   <div id="feedView">
   <div class="market" id="market"></div>
@@ -356,13 +370,34 @@
       el.innerHTML = rows.map(([k,v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
     }
 
+    function renderStatsbar(idx, g) {
+      const fg = idx && idx.fear_greed;
+      const alt = idx && idx.altseason;
+      // иконка и цвет Fear & Greed
+      const fgIcon = !fg ? '😶' : fg.value <= 25 ? '😱' : fg.value <= 45 ? '😰' : fg.value <= 55 ? '😐' : fg.value <= 75 ? '😊' : '🤑';
+      const fgColor = !fg ? '' : gaugeColor(fg.value);
+      document.getElementById('sb-fg').innerHTML = fg
+        ? `<span style="color:${fgColor}">${fg.value} <span style="font-weight:400;font-size:11px">${fg.classification}</span></span>`
+        : '<span style="color:var(--muted)">—</span>';
+      document.querySelector('.stat-chip:nth-child(2) .ic').textContent = fgIcon;
+      // Альт-сезон
+      const altIcon = !alt ? '🌊' : alt.phase === 'altseason' ? '🚀' : alt.phase === 'bitcoin' ? '₿' : '🌊';
+      const phaseRu = { altseason:'Альтсезон', bitcoin:'BTC-сезон', neutral:'Нейтрально' };
+      document.getElementById('sb-alt').innerHTML = alt
+        ? `<span style="color:${gaugeColor(alt.value)}">${alt.value} <span style="font-weight:400;font-size:11px">${phaseRu[alt.phase] || alt.phase}</span></span>`
+        : '<span style="color:var(--muted)">—</span>';
+      document.querySelector('.stat-chip:nth-child(3) .ic').textContent = altIcon;
+      // Капитализация
+      document.getElementById('sb-mcap').textContent = g && g.TOTAL ? fmtUsd(g.TOTAL) : '—';
+    }
+
     async function loadIndices() {
       try {
         const [idx, g] = await Promise.all([
           fetch(`${API}/api/indices`).then(r => r.json()),
           fetch(`${API}/api/global`).then(r => r.json()),
         ]);
-        renderIndices(idx); renderGlobalMetrics(g);
+        renderIndices(idx); renderGlobalMetrics(g); renderStatsbar(idx, g);
       } catch {}
     }
 
