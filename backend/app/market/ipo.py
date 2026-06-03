@@ -43,19 +43,17 @@ class IPOProvider:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.get(url, params=params)
                 r.raise_for_status()
-                text = r.text
-
-            # убираем BOM и пробелы
-            text = text.strip().lstrip('﻿')
+                # явно декодируем байты через utf-8-sig чтобы снять BOM
+                raw = r.content.decode('utf-8-sig', errors='replace').strip()
 
             # Alpha Vantage при rate-limit/ошибке возвращает JSON вместо CSV
-            if text.startswith('{') or text.startswith('['):
+            if raw.startswith('{') or raw.startswith('['):
                 return []
 
-            reader = csv.DictReader(io.StringIO(text))
-            # нормализуем имена колонок — убираем BOM и пробелы
+            reader = csv.DictReader(io.StringIO(raw))
+            # нормализуем имена колонок — убираем пробелы на случай нестандартного формата
             if reader.fieldnames:
-                reader.fieldnames = [f.strip().lstrip('﻿') for f in reader.fieldnames]
+                reader.fieldnames = [f.strip() for f in reader.fieldnames]
 
             result = []
             for row in reader:
